@@ -1319,6 +1319,11 @@ class PlayScene extends Phaser.Scene {
         victim.isDead = true;
         victim.setVelocity(0, 0);
 
+        // If the victim is the knight, cancel any ongoing movement
+        if (victim === this.purpleKnight) {
+            victim.currentMovement = null;
+        }
+
         // Immediately lock the other character
         const other = (victim === this.hero) ? this.purpleKnight : this.hero;
         other.setVelocity(0, 0);
@@ -1463,6 +1468,10 @@ class PlayScene extends Phaser.Scene {
     }
 
     update(time, delta) {
+        // Symmetrical melee hit detection for both characters
+        this.checkMeleeHit(this.hero, this.purpleKnight);
+        this.checkMeleeHit(this.purpleKnight, this.hero);
+
         if (this.gameOverActive) {
             if (Phaser.Input.Keyboard.JustDown(this.keys.q)) {
                 this.scene.restart();
@@ -1472,12 +1481,9 @@ class PlayScene extends Phaser.Scene {
 
         if (this.isDeathSequenceActive) {
             this.hero.setVelocity(0, 0);
+            this.purpleKnight.setVelocity(0, 0);
             return;
         }
-
-        // Symmetrical melee hit detection for both characters
-        this.checkMeleeHit(this.hero, this.purpleKnight);
-        this.checkMeleeHit(this.purpleKnight, this.hero);
 
         // Handle stamina updates for both characters every frame
         this.updateStamina(delta);
