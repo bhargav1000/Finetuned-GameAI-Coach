@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <title>Phaser Game</title>
     <style>
-        body { margin: 0; background: #000; display: flex; }
+        body { margin: 0; background: #000; display: flex; flex-direction: column; }
+        #main-content { display: flex; flex: 1; }
         #game-container { flex: 1; }
         #debug-panel { 
-            width: 300px; 
+            width: 400px; 
             background: #111; 
             color: #0f0; 
             font-family: 'Courier New', monospace; 
@@ -32,12 +33,35 @@
             width: 10px; 
             transition: width 0.3s ease; 
         }
+        #events-panel {
+            height: 200px;
+            background: #111;
+            color: #0ff;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            padding: 10px;
+            border-top: 1px solid #333;
+            overflow-y: auto;
+        }
+        #events-panel h3 { 
+            color: #ff0; 
+            margin: 0 0 10px 0; 
+        }
+        .event-item {
+            background: #222;
+            margin: 5px 0;
+            padding: 8px;
+            border-left: 3px solid #0ff;
+            white-space: pre-wrap;
+            font-size: 10px;
+        }
     </style>
     <script src="/node_modules/phaser/dist/phaser.js"></script>
 </head>
 <body>
-    <div id="game-container"></div>
-    <div id="debug-panel">
+    <div id="main-content">
+        <div id="game-container"></div>
+        <div id="debug-panel">
         <h3>Q-Learning Debug</h3>
         <div class="metric">State: <span id="debug-state">-</span></div>
         <div class="metric">Action: <span id="debug-action">-</span></div>
@@ -66,6 +90,15 @@
         <h3>Learning Stats</h3>
         <div class="metric">Total States: <span id="debug-total-states">0</span></div>
         <div class="metric">Hit Rate: <span id="debug-hit-rate">0%</span></div>
+        <h3>Player Actions</h3>
+        <div class="metric">Current Action: <span id="debug-player-action">-</span></div>
+        <div class="metric">Facing: <span id="debug-player-facing">-</span></div>
+        <div class="metric">Movement: <span id="debug-player-movement">-</span></div>
+        </div>
+    </div>
+    <div id="events-panel">
+        <h3>Recorded Events</h3>
+        <div id="events-content"></div>
     </div>
     <script type="module" src="main.js"></script>
 </body>
