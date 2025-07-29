@@ -607,11 +607,7 @@ class PlayScene extends Phaser.Scene {
         this.gameOverActive = true;
         this.isDeathSequenceActive = false; // Allow Q to be pressed
         this.gameOverText.setText(didWin ? 'YOU WIN' : 'YOU DIED').setVisible(true);
-
-        // Only show restart prompt on loss
-        if (!didWin) {
-            this.restartText.setVisible(true);
-        }
+        this.restartText.setVisible(true);
     }
 
     updateKnightHealthBar() {
@@ -1345,15 +1341,16 @@ class PlayScene extends Phaser.Scene {
             const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victim.y));
             victor.anims.playReverse(`unsheath-${direction}`);
             this.healthBar.setVisible(false);
+            this.cameras.main.stopFollow();
             this.time.delayedCall(1500, () => this.showGameOverScreen(false));
         }
 
         victim.anims.play('die', true);
         victim.once('animationcomplete-die', () => {
-            if (victim.body) {
-                this.matter.world.remove(victim.body);  
-                victim.body = null;
-            }
+            // if (victim.body) {
+            //     this.matter.world.remove(victim.body);  
+            //     victim.body = null;
+            // }
         });
     };
 
@@ -2030,15 +2027,16 @@ class PlayScene extends Phaser.Scene {
             const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victim.y));
             victor.anims.playReverse(`unsheath-${direction}`);
             this.healthBar.setVisible(false);
+            this.cameras.main.stopFollow();
             this.time.delayedCall(1500, () => this.showGameOverScreen(false));
         }
 
         victim.anims.play('die', true);
         victim.once('animationcomplete-die', () => {
-            if (victim.body) {
-                this.matter.world.remove(victim.body);  
-                victim.body = null;
-            }
+            // if (victim.body) {
+            //     this.matter.world.remove(victim.body);  
+            //     victim.body = null;
+            // }
         });
     }
 
