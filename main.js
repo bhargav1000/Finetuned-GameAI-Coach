@@ -221,6 +221,7 @@ class PlayScene extends Phaser.Scene {
         };
 
         this.hero.on('animationcomplete', (animation) => {
+            if (this.hero.isDead) { return; }
             if (animation.key.startsWith('shield-block-start-')) {
                 if (this.keys.b.isDown) {
                     this.hero.anims.play(`shield-block-mid-${this.facing}`, true);
@@ -296,6 +297,7 @@ class PlayScene extends Phaser.Scene {
         };
 
         this.purpleKnight.on('animationcomplete', (animation) => {
+            if (this.purpleKnight.isDead) { return; }
             if (animation.key.startsWith('take-damage-')) {
                 const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(this.purpleKnight.x, this.purpleKnight.y, this.hero.x, this.hero.y));
                 this.purpleKnight.anims.play(`idle-${direction}`, true);
@@ -400,12 +402,11 @@ class PlayScene extends Phaser.Scene {
             this.boundaryRects = boundaryRects; // Store for update loop
 
             // --- Purple Knight Health Bar ---
-            const barX = this.game.config.width / 2 - 100; // Center horizontally with offset
-            const barY = this.game.config.height - 50; // Position at bottom
+            const barX = this.game.config.width / 2 - 100;
+            const barY = this.game.config.height - 60; // Position adjusted for stamina bar
             const barWidth = 200;
-            const barHeight = 20;
             
-            // The health bar is a single purple bar that shrinks. No background needed.
+            this.knightHealthBarBg = this.add.graphics().setScrollFactor(0).setDepth(101); // For glow
             this.knightHealthBar = this.add.graphics().setScrollFactor(0).setDepth(102);
             this.knightNameText = this.add.text(barX + barWidth/2, barY - 15, 'Purple Knight', {
                 fontSize: '12px',
@@ -413,6 +414,11 @@ class PlayScene extends Phaser.Scene {
                 fontStyle: 'bold'
             }).setOrigin(0.5).setScrollFactor(0).setDepth(103);
             this.updateKnightHealthBar();
+
+            // --- Knight Stamina Bar ---
+            this.knightStaminaBarBg = this.add.graphics().setScrollFactor(0).setDepth(101); // For glow
+            this.knightStaminaBar = this.add.graphics().setScrollFactor(0).setDepth(102);
+            this.updateKnightStaminaBar(); // Initial draw
 
             // --- Game Over UI ---
             this.gameOverText = this.add.text(this.game.config.width / 2, this.game.config.height / 2 - 40, '', {
@@ -609,63 +615,91 @@ class PlayScene extends Phaser.Scene {
     }
 
     updateKnightHealthBar() {
-        if (!this.knightHealthBar) {
-            return;
-        }
+        if (!this.knightHealthBar) return;
         
         const x = this.game.config.width / 2 - 100;
-        const y = this.game.config.height - 50;
+        const y = this.game.config.height - 60;
         const w = 200;
-        const h = 20;
+        const h = 25;
+        const color = 0x9400D3; // Main purple
+        const highlightColor = 0xC8A2C8; // Light lilac for the top highlight
 
-        // Clear and redraw only the purple health bar.
         this.knightHealthBar.clear();
-        this.knightHealthBar.fillStyle(0x9400D3); // Purple to match knight
+
         const healthPercentage = Math.max(0, this.purpleKnight.health / this.purpleKnight.maxHealth);
         const healthWidth = healthPercentage * w;
-        this.knightHealthBar.fillRect(x, y, Math.max(0, healthWidth), h);
+
+        if (healthWidth > 0) {
+            // Main Bar
+            this.knightHealthBar.fillStyle(color);
+            this.knightHealthBar.fillRect(x, y, healthWidth, h);
+            // Top Highlight
+            this.knightHealthBar.fillStyle(highlightColor);
+            this.knightHealthBar.fillRect(x, y, healthWidth, h * 0.25); // Highlight is 25% of the height
+        }
     }
 
     updateHealthBar() {
-        if (!this.healthBarBg || !this.healthBar) {
-            console.log('⚠️  Health bar graphics not initialized!');
-            return;
-        }
+        if (!this.healthBar) return;
         
         const x = 20;
         const y = 20;
         const w = 200;
-        const h = 30; // Make thicker for visibility
-
-        this.healthBarBg.clear();
-        this.healthBarBg.fillStyle(0xff0000); // Red background
-        this.healthBarBg.fillRect(x, y, w, h);
+        const h = 25;
+        const color = 0x00cc00; // A slightly darker green
+        const highlightColor = 0x90EE90; // Light green
 
         this.healthBar.clear();
-        this.healthBar.fillStyle(0x00ff00); // Green foreground
-        const healthWidth = (this.hero.health / this.hero.maxHealth) * w;
-        console.log(`🩺 Hero health bar update: ${this.hero.health}/${this.hero.maxHealth} = ${healthWidth}px wide`);
-        this.healthBar.fillRect(x, y, Math.max(0, healthWidth), h); // Ensure width is not negative
-        
-        // Make sure bars are visible
-        this.healthBarBg.setVisible(true);
-        this.healthBar.setVisible(true);
+
+        const healthPercentage = (this.hero.health / this.hero.maxHealth);
+        const healthWidth = Math.max(0, healthPercentage * w);
+
+        if (healthWidth > 0) {
+            // Main Bar
+            this.healthBar.fillStyle(color);
+            this.healthBar.fillRect(x, y, healthWidth, h);
+            // Top Highlight
+            this.healthBar.fillStyle(highlightColor);
+            this.healthBar.fillRect(x, y, healthWidth, h * 0.25);
+        }
     }
 
     updateStaminaBar() {
         const x = 20;
-        const y = 50; // Below health bar
+        const y = 50;
         const w = 200;
-        const h = 15;
-
-        this.staminaBarBg.clear();
-        this.staminaBarBg.fillStyle(0x444444);
-        this.staminaBarBg.fillRect(x, y, w, h);
+        const h = 10;
+        const color = 0x0088ff; // Solid blue
 
         this.staminaBar.clear();
-        this.staminaBar.fillStyle(0x0088ff); // Blue for stamina
-        const staminaWidth = (this.hero.stamina / this.hero.maxStamina) * w;
-        this.staminaBar.fillRect(x, y, staminaWidth, h);
+
+        const staminaPercentage = (this.hero.stamina / this.hero.maxStamina);
+        const staminaWidth = Math.max(0, staminaPercentage * w);
+
+        if (staminaWidth > 0) {
+            this.staminaBar.fillStyle(color);
+            this.staminaBar.fillRect(x, y, staminaWidth, h);
+        }
+    }
+
+    updateKnightStaminaBar() {
+        if (!this.knightStaminaBar) return;
+
+        const x = this.game.config.width / 2 - 100;
+        const y = this.game.config.height - 30;
+        const w = 200;
+        const h = 10;
+        const color = 0x0088ff; // Solid blue
+
+        this.knightStaminaBar.clear();
+
+        const staminaPercentage = (this.purpleKnight.stamina / this.purpleKnight.maxStamina);
+        const staminaWidth = Math.max(0, staminaPercentage * w);
+
+        if (staminaWidth > 0) {
+            this.knightStaminaBar.fillStyle(color);
+            this.knightStaminaBar.fillRect(x, y, staminaWidth, h);
+        }
     }
 
     animateHealthBarDamage(target, oldHealth) {
@@ -888,6 +922,7 @@ class PlayScene extends Phaser.Scene {
         
         // Reset attack state when animation completes
         attacker.once('animationcomplete', (animation) => {
+            if (attacker.isDead) { return; }
             // Only handle attack animations
             if (animation.key.includes(attacker.currentAttackType)) {
                 attacker.isAttacking = false;
@@ -1299,17 +1334,13 @@ class PlayScene extends Phaser.Scene {
             });
             this.knightHealthBar.setVisible(false);
             this.knightNameText.setVisible(false);
+            this.knightStaminaBar.setVisible(false);
         } else { // victim is hero
             const victor = this.purpleKnight;
-            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victor.y));
-            victor.anims.play(`idle-${direction}`, true);
-            this.healthBarBg.setVisible(false);
+            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victim.y));
+            victor.anims.playReverse(`unsheath-${direction}`);
             this.healthBar.setVisible(false);
-            
-            // Show lose screen
-            this.time.delayedCall(1500, () => {
-                this.showGameOverScreen(false);
-            });
+            this.time.delayedCall(1500, () => this.showGameOverScreen(false));
         }
 
         victim.anims.play('die', true);
@@ -1444,8 +1475,9 @@ class PlayScene extends Phaser.Scene {
             return;
         }
 
-        // Manually check for attack overlaps
-        this.handleAttackOverlap();
+        // Symmetrical melee hit detection for both characters
+        this.checkMeleeHit(this.hero, this.purpleKnight);
+        this.checkMeleeHit(this.purpleKnight, this.hero);
 
         // Handle stamina updates for both characters every frame
         this.updateStamina(delta);
@@ -1453,25 +1485,93 @@ class PlayScene extends Phaser.Scene {
         // --- Purple Knight AI with Q-Learning ---
         const knight = this.purpleKnight;
         if (knight.active) {
-            if (!knight.isDead) {
-                // 🚫 DEBUG: Make knight completely stationary for hit testing
-                knight.setVelocity(0, 0);
-                knight.currentMovement = null;
+            if (knight.isDead) {
+                return;
+            }
+            
+            const knightAnim = knight.anims.currentAnim;
+            const isKnightInAction = (knightAnim && (knightAnim.key.startsWith('take-damage-') || knightAnim.key.startsWith('shield-block-'))) || knight.isTakingDamage || knight.isAttacking || knight.isRecovering;
+
+            // Update action cooldown
+            if (knight.actionCooldown > 0) {
+                knight.actionCooldown -= delta;
+            }
+            
+            // Update movement duration and handle ongoing movement
+            if (knight.currentMovement && knight.movementDuration > 0) {
+                knight.movementDuration -= delta;
                 
-                // Set a fixed direction and play idle animation if not reacting to a hit
-                const fixedDirection = 's';
-                knight.facing = fixedDirection;
-                knight.isBlocking = false; // Explicitly ensure not blocking
+                // Use stored movement direction and angle (don't recalculate)
+                if (knight.currentMovement === 'approach') {
+                    // Check distance to player to prevent overshooting
+                    const currentDistance = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+                    
+                    if (currentDistance > 70) { // Safe distance to continue moving
+                        const knightSpeed = Math.min(2, (currentDistance - 60) / 10); // Slow down as getting closer
+                        const moveVector = new Phaser.Math.Vector2(
+                            Math.cos(knight.movementAngle) * knightSpeed,
+                            Math.sin(knight.movementAngle) * knightSpeed
+                        );
+                        knight.setStatic(false); // Allow movement temporarily
+                        knight.body.collisionFilter.mask = 0x0004; // Only collide with walls, not hero
+                        knight.setVelocity(moveVector.x, moveVector.y);
+                        knight.anims.play(`walk-${knight.movementDirection}`, true);
+                    } else {
+                        knight.movementDuration = 0; // Force stop
+                    }
+                } else if (knight.currentMovement === 'lunge_left') {
+                    const lungeSpeed = 4;
+                    const leftVector = new Phaser.Math.Vector2(
+                        Math.cos(knight.movementAngle) * lungeSpeed,
+                        Math.sin(knight.movementAngle) * lungeSpeed
+                    );
+                    knight.setStatic(false);
+                    knight.body.collisionFilter.mask = 0x0004;
+                    knight.setVelocity(leftVector.x, leftVector.y);
+                    if (!knight.anims.isPlaying || !knight.anims.currentAnim.key.startsWith('rolling-')) {
+                        knight.anims.play(`rolling-${knight.movementDirection}`, true);
+                    }
+                } else if (knight.currentMovement === 'lunge_right') {
+                    const lungeSpeed = 4;
+                    const rightVector = new Phaser.Math.Vector2(
+                        Math.cos(knight.movementAngle) * lungeSpeed,
+                        Math.sin(knight.movementAngle) * lungeSpeed
+                    );
+                    knight.setStatic(false);
+                    knight.body.collisionFilter.mask = 0x0004;
+                    knight.setVelocity(rightVector.x, rightVector.y);
+                    if (!knight.anims.isPlaying || !knight.anims.currentAnim.key.startsWith('rolling-')) {
+                        knight.anims.play(`rolling-${knight.movementDirection}`, true);
+                    }
+                }
+                
+                if (knight.movementDuration <= 0) {
+                    knight.currentMovement = null;
+                    knight.setVelocity(0, 0);
+                    knight.setStatic(true);
+                    knight.body.collisionFilter.mask = 0x0005;
+                    const currentAngle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+                    const currentDirection = this.getDirectionFromAngle(currentAngle);
+                    knight.facing = currentDirection;
+                    knight.anims.play(`idle-${currentDirection}`, true);
+                }
+            }
 
-                const knightAnim = knight.anims.currentAnim;
-                const isTakingHit = knightAnim && (knightAnim.key.startsWith('take-damage-'));
-
-                if (!isTakingHit) {
-                    knight.anims.play(`idle-${fixedDirection}`, true);
+            if (!isKnightInAction && knight.actionCooldown <= 0 && !knight.currentMovement) {
+                const prevState = this.getKnightState(knight);
+                const prevAction = chooseAction(prevState);
+                const ctx = { action: prevAction };
+                
+                this.executeKnightAction(knight, ctx);
+                this.logEvt(knight, prevAction);
+                
+                if (prevAction === 'attack') {
+                    knight.actionCooldown = 800;
+                } else {
+                    knight.actionCooldown = 200;
                 }
             }
         }
-
 
         if (this.redBoundaries && this.redBoundaries.visible) {
             this.redBoundaries.clear();
@@ -1656,17 +1756,17 @@ class PlayScene extends Phaser.Scene {
         }
         
         if (Phaser.Input.Keyboard.JustDown(m) || (gamepadInput.attack && !this.lastGamepadState?.attack)) {
-            this.hero.anims.play(`melee-${this.facing}`, true);
+            this.performAttack(this.hero, 'melee');
             return;
         }
 
         if (Phaser.Input.Keyboard.JustDown(n) || (gamepadInput.melee2 && !this.lastGamepadState?.melee2)) {
-            this.hero.anims.play(`melee2-${this.facing}`, true);
+            this.performAttack(this.hero, 'melee2');
             return;
         }
 
         if (Phaser.Input.Keyboard.JustDown(c) || (gamepadInput.special1 && !this.lastGamepadState?.special1)) {
-            this.hero.anims.play(`special1-${this.facing}`, true);
+            this.performAttack(this.hero, 'special1');
             return;
         }
 
@@ -1800,59 +1900,65 @@ class PlayScene extends Phaser.Scene {
         }
     }
 
-    handleAttackOverlap() {
-        if (!this.hero || !this.purpleKnight || this.purpleKnight.isTakingDamage || this.purpleKnight.isDead) {
+    checkMeleeHit(attacker, target) {
+        if (!attacker || !target || target.isTakingDamage || target.isDead) {
             return;
         }
     
-        const currentAnim = this.hero.anims.currentAnim;
-        const isAttacking = currentAnim && ['melee-', 'kick-', 'melee2-', 'special1-'].some(prefix => currentAnim.key.startsWith(prefix));
+        const currentAnim = attacker.anims.currentAnim;
+        const isAttacking = currentAnim && ['melee', 'melee2', 'special1', 'kick'].some(prefix => currentAnim.key.startsWith(prefix));
     
-        if (!isAttacking) {
+        if (!isAttacking || !attacker.anims.isPlaying) {
             return;
         }
-    
-        const distance = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, this.purpleKnight.x, this.purpleKnight.y);
-        const hitRange = 60; // Combined radii of hero (28) and knight (28) + a little extra
+        
+        // Check hit only during the middle of the animation swing
+        const frame = currentAnim.getFrameByProgress(attacker.anims.getProgress());
+        const isHitFrame = frame && frame.index >= 4 && frame.index <= 10;
+        
+        if (!isHitFrame) {
+            return;
+        }
+
+        const distance = Phaser.Math.Distance.Between(attacker.x, attacker.y, target.x, target.y);
+        const hitRange = 65; // A generous range for combat
     
         if (distance < hitRange) {
+            // Check for blocking
+            if (target.isBlocking) {
+                const attackAngle = Phaser.Math.Angle.Between(target.x, target.y, attacker.x, attacker.y);
+                const targetFacingAngle = this.getAngleFromDirection(target.facing);
+                const angleDiff = Phaser.Math.Angle.ShortestBetween(Phaser.Math.RadToDeg(targetFacingAngle), Phaser.Math.RadToDeg(attackAngle));
+        
+                if (Math.abs(angleDiff) <= 45) { // 90-degree block arc
+                    console.log(`${target.label} blocked ${attacker.label}'s attack!`);
+                    return; 
+                }
+            }
+        
             // A hit is detected.
-            this.handlePlayerAttack(this.hero, this.purpleKnight);
+            const attackType = currentAnim.key.split('-')[0];
+            target.isTakingDamage = true;
+            this.takeDamage(target, attacker, attackType);
+
+            // Prevent multiple hits from the same animation
+            this.time.delayedCall(500, () => {
+                if (target.active) {
+                    target.isTakingDamage = false;
+                }
+            });
         }
     }
-    
-    handlePlayerAttack(hero, knight) {
-        // Prevent multiple damage calls from a single swing
-        if (knight.isTakingDamage) {
-            return;
-        }
-    
-        const attackType = hero.anims.currentAnim.key.split('-')[0];
-    
-        // Check for blocking
-        if (knight.isBlocking) {
-            const attackAngle = Phaser.Math.Angle.Between(knight.x, knight.y, hero.x, hero.y);
-            const knightFacingAngle = this.getAngleFromDirection(knight.facing);
-            const angleDiff = Phaser.Math.Angle.ShortestBetween(Phaser.Math.RadToDeg(knightFacingAngle), Phaser.Math.RadToDeg(attackAngle));
-    
-            // Block is successful if attack is within a 90-degree arc in front of the knight
-            if (Math.abs(angleDiff) <= 45) {
-                console.log("Attack blocked!");
-                // Here you could add logic for stamina drain on block, or a "clang" sound
-                return; 
-            }
-        }
-    
-        // If not blocked or block failed, apply damage
-        knight.isTakingDamage = true; // Set flag immediately to prevent re-triggering
-        this.takeDamage(knight, hero, attackType);
-    
-        // Reset the taking damage flag after a short delay
-        this.time.delayedCall(500, () => {
-            if (knight.active) {
-                knight.isTakingDamage = false;
-            }
-        });
+
+    getButtonName(index) {
+        const buttonNames = {
+            0: 'A', 1: 'B', 2: 'X', 3: 'Y',
+            4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
+            8: 'Back', 9: 'Start', 10: 'Xbox', 11: 'Ybox',
+            12: 'Left Stick', 13: 'Right Stick', 14: 'D-Pad Up',
+            15: 'D-Pad Down', 16: 'D-Pad Left', 17: 'D-Pad Right'
+        };
+        return buttonNames[index] || 'Unknown';
     }
 
     takeDamage(victim, attacker, attackType) {
@@ -1912,11 +2018,11 @@ class PlayScene extends Phaser.Scene {
             this.time.delayedCall(1000, () => this.showGameOverScreen(true));
             this.knightHealthBar.setVisible(false);
             this.knightNameText.setVisible(false);
+            this.knightStaminaBar.setVisible(false);
         } else { // victim is hero
             const victor = this.purpleKnight;
-            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victor.y));
-            victor.anims.play(`idle-${direction}`, true);
-            this.healthBarBg.setVisible(false);
+            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victim.y));
+            victor.anims.playReverse(`unsheath-${direction}`);
             this.healthBar.setVisible(false);
             this.time.delayedCall(1500, () => this.showGameOverScreen(false));
         }
@@ -2049,6 +2155,10 @@ class PlayScene extends Phaser.Scene {
             // Start regenerating after block disable period ends
             this.purpleKnight.stamina = 1; // Jump start regeneration
         }
+
+        // Always update stamina bars for immediate feedback
+        this.updateStaminaBar();
+        this.updateKnightStaminaBar();
     }
 
     displayEvent(event) {
