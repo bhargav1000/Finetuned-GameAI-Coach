@@ -1,5 +1,11 @@
 #macOS specific
 .DS_Store
 
+# dev folders
 .cursor/
 .claude/
+.venv/
+
+# screenshots
+.screenshots/
+

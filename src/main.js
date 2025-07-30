@@ -49,6 +49,7 @@ class PlayScene extends Phaser.Scene {
         this.keys.b = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
         this.keys.f = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
         this.keys.c = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+        this.keys.p = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P); // Screenshot key
 
         // Keys for the debug panel, created only once.
         this.debugKeys = this.input.keyboard.addKeys('W,A,S,D,SPACE,Q,E,R,F,B,C,V');
@@ -203,6 +204,7 @@ class PlayScene extends Phaser.Scene {
         this.hero.blockDisableTimer = 0;
         this.hero.movementDisabled = false;
         this.hero.movementDisableTimer = 0;
+        this.hero.staminaRegenDelay = 0;
         
         // Initialize armor attributes
         this.hero.armor = { 
@@ -279,6 +281,7 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.movementDisableTimer = 0;
         this.purpleKnight.movementAngle = 0;
         this.purpleKnight.movementDirection = 's';
+        this.purpleKnight.staminaRegenDelay = 0;
         
         // Initialize armor attributes
         this.purpleKnight.armor = { 
@@ -573,6 +576,9 @@ class PlayScene extends Phaser.Scene {
         } else {
             console.log('❌ No gamepad support available');
         }
+
+        this.lastScreenshotTime = 0;
+        this.screenshotInterval = 100; // ms
     }
 
     knightReact() {
@@ -857,6 +863,15 @@ class PlayScene extends Phaser.Scene {
         // Consume stamina
         attacker.stamina -= staminaCost;
         
+        // Set stamina regen delay based on attack
+        if (attackType === 'special1') {
+            attacker.staminaRegenDelay = 1500; // 1.5s delay
+        } else if (attackType === 'melee2') {
+            attacker.staminaRegenDelay = 1000; // 1s delay
+        } else {
+            attacker.staminaRegenDelay = 500; // 0.5s delay for light attacks
+        }
+        
         attacker.isAttacking = true;
         attacker.currentAttackType = attackType;
         
@@ -1103,7 +1118,7 @@ class PlayScene extends Phaser.Scene {
             
             // Apply damage and effects
             this.applyDamage(targetBody.gameObject, dmg);
-            this.applyKnockback(targetBody.gameObject, attacker);
+            this.applyKnockback(targetBody.gameObject, attacker, attacker.currentAttackType);
             this.playHitReaction(targetBody.gameObject);
             
             // Start recovery period for attacker
@@ -1181,7 +1196,7 @@ class PlayScene extends Phaser.Scene {
         const targetFacing = target === this.hero ? this.facing : target.facing;
         
         // Check if attack is within blocking arc
-        if (this.withinArc(hitAngle, targetFacing, 90)) {
+        if (this.withinArc(hitAngle, targetFacing, 120)) {
             // Store original damage for stamina calculation
             const originalDamage = dmg;
             
@@ -1268,14 +1283,29 @@ class PlayScene extends Phaser.Scene {
         }
     };
 
-    applyKnockback = (target, attacker) => {
-        // Re-enabled knockback system
-        const knockbackDistance = 15;
-        const knockbackAngle = Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y);
-        const knockbackVelocity = new Phaser.Math.Vector2(Math.cos(knockbackAngle), Math.sin(knockbackAngle)).scale(knockbackDistance * 0.5);
-        
-        // Only apply knockback to hero (knight should remain static)
+    applyKnockback = (target, attacker, attackType) => {
+        // Special knockback for special attack on knight
+        if (attackType === 'special1' && target === this.purpleKnight) {
+            const knockbackAngle = Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y);
+            const knockbackVelocity = new Phaser.Math.Vector2(Math.cos(knockbackAngle), Math.sin(knockbackAngle)).scale(5); // Increased force for visibility
+            
+            target.setStatic(false);
+            target.setVelocity(knockbackVelocity.x, knockbackVelocity.y);
+            
+            this.time.delayedCall(150, () => {
+                if (target.active && !target.isDead) {
+                    target.setVelocity(0, 0);
+                    target.setStatic(true);
+                }
+            });
+            return;
+        }
+
+        // Original knockback logic for the hero
         if (target === this.hero) {
+            const knockbackDistance = 15;
+            const knockbackAngle = Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y);
+            const knockbackVelocity = new Phaser.Math.Vector2(Math.cos(knockbackAngle), Math.sin(knockbackAngle)).scale(knockbackDistance * 0.5);
             target.setVelocity(knockbackVelocity.x, knockbackVelocity.y);
             this.time.delayedCall(50, () => {
                 if (target.active && !target.isDead) {
@@ -1400,6 +1430,7 @@ class PlayScene extends Phaser.Scene {
                         if (distanceToPlayer > moveDistance + 40) { // 40px buffer to prevent overlap
                             console.log(`Starting approach movement: distance=${distanceToPlayer.toFixed(1)}, angle=${angle.toFixed(2)}, direction=${direction}`);
                             knight.stamina -= 5;
+                            knight.staminaRegenDelay = 250; // 0.25s delay for light movement
                             knight.currentMovement = 'approach';
                             knight.movementDuration = 500; // Move for 500ms
                             knight.movementAngle = angle; // Store direction to player
@@ -1427,6 +1458,7 @@ class PlayScene extends Phaser.Scene {
                 // Check stamina and movement disability for lunge (higher cost)
                 if (knight.stamina >= 20 && !knight.movementDisabled) {
                     knight.stamina -= 20;
+                    knight.staminaRegenDelay = 400; // 0.4s delay for a lunge
                     knight.currentMovement = 'lunge_left';
                     knight.movementDuration = 300; // Lunge for 300ms
                     knight.movementAngle = angle - Math.PI/2; // Store left angle
@@ -1444,6 +1476,7 @@ class PlayScene extends Phaser.Scene {
                 // Check stamina and movement disability for lunge (higher cost)
                 if (knight.stamina >= 20 && !knight.movementDisabled) {
                     knight.stamina -= 20;
+                    knight.staminaRegenDelay = 400; // 0.4s delay for a lunge
                     knight.currentMovement = 'lunge_right';
                     knight.movementDuration = 300; // Lunge for 300ms
                     knight.movementAngle = angle + Math.PI/2; // Store right angle
@@ -1465,9 +1498,16 @@ class PlayScene extends Phaser.Scene {
     }
 
     update(time, delta) {
+        this.updateSensorChecks();
+        
         // Symmetrical melee hit detection for both characters
-        this.checkMeleeHit(this.hero, this.purpleKnight);
-        this.checkMeleeHit(this.purpleKnight, this.hero);
+        // this.checkMeleeHit(this.hero, this.purpleKnight);
+        // this.checkMeleeHit(this.purpleKnight, this.hero);
+
+        if (time - this.lastScreenshotTime > this.screenshotInterval) {
+            this.takeScreenshot();
+            this.lastScreenshotTime = time;
+        }
 
         if (this.gameOverActive) {
             if (Phaser.Input.Keyboard.JustDown(this.keys.q)) {
@@ -1560,7 +1600,7 @@ class PlayScene extends Phaser.Scene {
                 }
             }
 
-            if (!isKnightInAction && knight.actionCooldown <= 0 && !knight.currentMovement) {
+            if (!isKnightInAction && knight.actionCooldown <= 0 && !knight.currentMovement && knight.staminaRegenDelay <= 0) {
                 const prevState = this.getKnightState(knight);
                 const prevAction = chooseAction(prevState);
                 const ctx = { action: prevAction };
@@ -1691,7 +1731,7 @@ class PlayScene extends Phaser.Scene {
         
         const currentAnim = this.hero.anims.currentAnim;
         const isBlocking = currentAnim && (currentAnim.key.startsWith('shield-block-start-') || currentAnim.key.startsWith('shield-block-mid-'));
-        const isActionInProgress = this.hero.isAttacking || (currentAnim && (currentAnim.key.startsWith('melee-') || currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('kick-') || currentAnim.key.startsWith('melee2-') || currentAnim.key.startsWith('special1-') || currentAnim.key.startsWith('front-flip-')) && this.hero.anims.isPlaying);
+        const isActionInProgress = this.hero.isAttacking || (currentAnim && (currentAnim.key.startsWith('melee-') || currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('take-damage-') || currentAnim.key.startsWith('kick-') || currentAnim.key.startsWith('melee2-') || currentAnim.key.startsWith('special1-') || currentAnim.key.startsWith('front-flip-')) && this.hero.anims.isPlaying);
 
         if (isBlocking) {
             this.hero.setVelocity(0, 0);
@@ -1784,10 +1824,6 @@ class PlayScene extends Phaser.Scene {
         const leftPressed = left.isDown || gamepadInput.left;
         const rightPressed = right.isDown || gamepadInput.right;
         
-        // Debug: Log raw key states
-        console.log(`🔧 Raw key states: up=${up.isDown}, down=${down.isDown}, left=${left.isDown}, right=${right.isDown}`);
-        console.log(`🔧 Final pressed states: up=${upPressed}, down=${downPressed}, left=${leftPressed}, right=${rightPressed}`);
-        
         if (upPressed) {
             if (leftPressed) direction = 'nw';
             else if (rightPressed) direction = 'ne';
@@ -1808,11 +1844,6 @@ class PlayScene extends Phaser.Scene {
         if (upPressed) velocity.y = -1;
         else if (downPressed) velocity.y = 1;
         
-        // Debug: Log input detection
-        if (upPressed || downPressed || leftPressed || rightPressed) {
-            console.log(`🎮 Input detected: up=${upPressed}, down=${downPressed}, left=${leftPressed}, right=${rightPressed}`);
-        }
-
         // --- Play animations and log movement ---
         if (velocity.length() > 0) {
             this.facing = direction;
@@ -1846,7 +1877,6 @@ class PlayScene extends Phaser.Scene {
             this.hero.anims.play(`idle-${this.facing}`, true);
         }
 
-        console.log(`🏃 Setting hero velocity: x=${velocity.x.toFixed(2)}, y=${velocity.y.toFixed(2)}`);
         this.hero.setVelocity(velocity.x, velocity.y);
         
         // Ensure no visual rotation
@@ -1882,7 +1912,7 @@ class PlayScene extends Phaser.Scene {
         }
         
         // Stamina regeneration
-        this.updateStamina();
+        this.updateStamina(delta);
         
         // Store gamepad state for next frame comparison (native API)
         if (this.gamepad) {
@@ -1945,7 +1975,7 @@ class PlayScene extends Phaser.Scene {
             this.takeDamage(target, attacker, attackType);
 
             // Prevent multiple hits from the same animation
-            this.time.delayedCall(500, () => {
+            this.time.delayedCall(1000, () => {
                 if (target.active) {
                     target.isTakingDamage = false;
                 }
@@ -2078,6 +2108,14 @@ class PlayScene extends Phaser.Scene {
     }
 
     updateStamina(delta) {
+        // Update stamina regen delay timers
+        if (this.hero.staminaRegenDelay > 0) {
+            this.hero.staminaRegenDelay -= delta;
+        }
+        if (this.purpleKnight.staminaRegenDelay > 0) {
+            this.purpleKnight.staminaRegenDelay -= delta;
+        }
+
         // Check for stamina exhaustion and disable blocking + movement
         if (this.hero.stamina <= 0 && !this.hero.blockDisabled) {
             this.hero.blockDisabled = true;
@@ -2112,6 +2150,7 @@ class PlayScene extends Phaser.Scene {
             this.hero.blockDisableTimer -= delta;
             if (this.hero.blockDisableTimer <= 0) {
                 this.hero.blockDisabled = false;
+                this.hero.stamina = 1; // Jump-start stamina recovery
                 console.log('🛡️ Hero shield recovered!');
             }
         }
@@ -2128,6 +2167,7 @@ class PlayScene extends Phaser.Scene {
             this.purpleKnight.blockDisableTimer -= delta;
             if (this.purpleKnight.blockDisableTimer <= 0) {
                 this.purpleKnight.blockDisabled = false;
+                this.purpleKnight.stamina = 1; // Jump-start stamina recovery
                 console.log('🛡️ Knight shield recovered!');
             }
         }
@@ -2140,24 +2180,16 @@ class PlayScene extends Phaser.Scene {
             }
         }
         
-        // Regenerate stamina for hero (only if not at 0 or recovering from exhaustion)
-        if (this.hero.stamina < this.hero.maxStamina && this.hero.stamina > 0) {
+        // Regenerate stamina for hero
+        if (this.hero.stamina < this.hero.maxStamina && this.hero.staminaRegenDelay <= 0 && !this.hero.blockDisabled) {
             this.hero.stamina += this.hero.staminaRegenRate;
             this.hero.stamina = Math.min(this.hero.stamina, this.hero.maxStamina);
-            this.updateStaminaBar();
-        } else if (this.hero.stamina <= 0 && !this.hero.blockDisabled) {
-            // Start regenerating after block disable period ends
-            this.hero.stamina = 1; // Jump start regeneration
-            this.updateStaminaBar();
         }
         
-        // Regenerate stamina for knight (only if not at 0 or recovering from exhaustion)
-        if (this.purpleKnight.stamina < this.purpleKnight.maxStamina && this.purpleKnight.stamina > 0) {
+        // Regenerate stamina for knight
+        if (this.purpleKnight.stamina < this.purpleKnight.maxStamina && this.purpleKnight.staminaRegenDelay <= 0 && !this.purpleKnight.blockDisabled) {
             this.purpleKnight.stamina += this.purpleKnight.staminaRegenRate;
             this.purpleKnight.stamina = Math.min(this.purpleKnight.stamina, this.purpleKnight.maxStamina);
-        } else if (this.purpleKnight.stamina <= 0 && !this.purpleKnight.blockDisabled) {
-            // Start regenerating after block disable period ends
-            this.purpleKnight.stamina = 1; // Jump start regeneration
         }
 
         // Always update stamina bars for immediate feedback
@@ -2273,6 +2305,42 @@ class PlayScene extends Phaser.Scene {
                     // checkSensorOverlap deactivates the sensor, preventing multiple hits from one swing.
                 }
             }
+        }
+    }
+
+    takeScreenshot() {
+        const mainCanvas = this.game.canvas;
+        const screenshotCanvas = document.getElementById('screenshot-canvas');
+
+        if (!screenshotCanvas) {
+            console.error('Screenshot canvas not found!');
+            return;
+        }
+
+        screenshotCanvas.width = mainCanvas.width;
+        screenshotCanvas.height = mainCanvas.height;
+
+        const context = screenshotCanvas.getContext('2d');
+        context.drawImage(mainCanvas, 0, 0, mainCanvas.width, mainCanvas.height);
+
+        const imageData = screenshotCanvas.toDataURL('image/png');
+        const metadata = {
+            player: {
+                hp: this.hero.health / this.hero.maxHealth,
+                animation: this.hero.anims.currentAnim ? this.hero.anims.currentAnim.key : 'none'
+            },
+            enemy: {
+                hp: this.purpleKnight.health / this.purpleKnight.maxHealth,
+                animation: this.purpleKnight.anims.currentAnim ? this.purpleKnight.anims.currentAnim.key : 'none'
+            }
+        };
+
+        if (this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: 'screenshot',
+                image: imageData,
+                metadata: metadata
+            }));
         }
     }
 }
