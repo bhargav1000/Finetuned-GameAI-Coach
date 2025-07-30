@@ -14,22 +14,22 @@ class PlayScene extends Phaser.Scene {
 
     preload() {
         // Load all assets with the correct, visually confirmed 128x128 frame size.
-        this.load.image('boss_arena', 'map_assets/boss_arena.png');
-        this.load.spritesheet('idle', 'character_assets/Idle.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('walk', 'character_assets/Walk.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('run', 'character_assets/Run.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('melee', 'character_assets/Melee.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('rolling', 'character_assets/Rolling.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('take-damage', 'character_assets/TakeDamage.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('kick', 'character_assets/Kick.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('melee2', 'character_assets/Melee2.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('special1', 'character_assets/Special1.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('die', 'character_assets/Die.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('unsheath', 'character_assets/UnSheathSword.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('shield-block-start', 'character_assets/ShieldBlockStart.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('shield-block-mid', 'character_assets/ShieldBlockMid.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('front-flip', 'character_assets/FrontFlip.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.image('healthbar', 'character_assets/healthbar.png');
+        this.load.image('boss_arena', 'assets/map/boss_arena.png');
+        this.load.spritesheet('idle', 'assets/character/Idle.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('walk', 'assets/character/Walk.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('run', 'assets/character/Run.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('melee', 'assets/character/Melee.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('rolling', 'assets/character/Rolling.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('take-damage', 'assets/character/TakeDamage.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('kick', 'assets/character/Kick.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('melee2', 'assets/character/Melee2.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('special1', 'assets/character/Special1.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('die', 'assets/character/Die.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('unsheath', 'assets/character/UnSheathSword.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('shield-block-start', 'assets/character/ShieldBlockStart.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('shield-block-mid', 'assets/character/ShieldBlockMid.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.spritesheet('front-flip', 'assets/character/FrontFlip.png', { frameWidth: 128, frameHeight: 128 });
+        this.load.image('healthbar', 'assets/character/healthbar.png');
     }
 
     create() {
