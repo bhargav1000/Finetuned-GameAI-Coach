@@ -338,25 +338,9 @@ class PlayScene extends Phaser.Scene {
         this.obstacles = walls;
 
         // Set up collision detection for attacks
-        this.matter.world.on('collisionstart', (ev) => {
-            ev.pairs.forEach(p => {
-                const { bodyA, bodyB } = p;
-                
-                // PREVENT LIGHT PUSHING - Reset knight velocity if pushed by hero collision
-                if ((bodyA.label === 'hero' && bodyB.label === 'knight') || (bodyA.label === 'knight' && bodyB.label === 'hero')) {
-                    const knight = bodyA.label === 'knight' ? bodyA.gameObject : bodyB.gameObject;
-                    // Only prevent movement if knight isn't actively moving
-                    if (!knight.currentMovement && !knight.isAttacking && !knight.isRecovering) {
-                        this.time.delayedCall(1, () => {
-                            if (knight.active) {
-                                knight.setVelocity(0, 0);
-                                // console.log('Prevented knight from being pushed by collision');
-                            }
-                        });
-                    }
-                }
-            });
-        });
+        
+
+
         // F2 debug
         if (!this._f2) {
             this._f2 = true;
@@ -504,78 +488,13 @@ class PlayScene extends Phaser.Scene {
         this.cameras.main.setBounds(0, 0, map.width, map.height);
         this.cameras.main.roundPixels = true;
 
-        // --- Matter Debug View (disabled) ---
-        // this.matter.world.createDebugGraphic();
-        // this.matter.world.drawDebug = true;
-        // this.matter.world.debugGraphic.setVisible(true);
+
         
         // --- Xbox Controller Setup (Native Browser API) ---
         this.gamepad = null;
         this.lastGamepadState = {};
-        console.log('=== GAMEPAD DEBUG START ===');
-        console.log('Browser gamepad support:', !!navigator.getGamepads);
-        console.log('Phaser gamepad available:', !!this.input.gamepad);
-        
-        // Use native browser gamepad API since Phaser's isn't available
-        if (navigator.getGamepads) {
-            console.log('Using native browser gamepad API...');
-            
-            // Add event listeners for gamepad connect/disconnect
-            window.addEventListener('gamepadconnected', (e) => {
-                console.log(`🎮 Gamepad connected: ${e.gamepad.id}`);
-                if (!this.gamepad) {
-                    this.gamepad = e.gamepad;
-                    this.logEvt(this.hero, 'controller_connected_event');
-                }
-            });
-            
-            window.addEventListener('gamepaddisconnected', (e) => {
-                console.log(`🎮 Gamepad disconnected: ${e.gamepad.id}`);
-                if (this.gamepad && this.gamepad.index === e.gamepad.index) {
-                    this.gamepad = null;
-                }
-            });
-            
-            // Check for gamepads every second with detailed logging
-            const checkForNativeGamepads = () => {
-                console.log(`=== Native Gamepad Check #${this.gamepadCheckAttempts + 1} ===`);
-                const gamepads = navigator.getGamepads();
-                console.log(`navigator.getGamepads() returned:`, gamepads);
-                console.log(`Array length: ${gamepads.length}`);
-                
-                for (let i = 0; i < gamepads.length; i++) {
-                    console.log(`Gamepad ${i}:`, gamepads[i]);
-                    if (gamepads[i]) {
-                        console.log(`  - ID: ${gamepads[i].id}`);
-                        console.log(`  - Connected: ${gamepads[i].connected}`);
-                        console.log(`  - Index: ${gamepads[i].index}`);
-                        console.log(`  - Buttons: ${gamepads[i].buttons.length}`);
-                        console.log(`  - Axes: ${gamepads[i].axes.length}`);
-                        
-                        if (gamepads[i].connected && !this.gamepad) {
-                            this.gamepad = gamepads[i];
-                            console.log(`✅ Xbox controller FOUND! ID: ${this.gamepad.id}`);
-                            this.logEvt(this.hero, 'native_controller_detected');
-                            return;
-                        }
-                    }
-                }
-                
-                // Keep checking for controllers
-                if (!this.gamepad && this.gamepadCheckAttempts < 10) {
-                    this.gamepadCheckAttempts++;
-                    this.time.delayedCall(1000, checkForNativeGamepads);
-                } else if (this.gamepadCheckAttempts >= 10) {
-                    console.log('❌ Native gamepad detection stopped after 10 attempts');
-                    console.log('💡 Try pressing any button on your Xbox controller to wake it up!');
-                }
-            };
-            
-            this.gamepadCheckAttempts = 0;
-            this.time.delayedCall(500, checkForNativeGamepads);
-        } else {
-            console.log('❌ No gamepad support available');
-        }
+
+
 
         this.lastScreenshotTime = 0;
         this.screenshotInterval = 100; // ms
@@ -608,6 +527,8 @@ class PlayScene extends Phaser.Scene {
             }
         }
     }
+
+
 
     showGameOverScreen(didWin) {
         this.gameOverActive = true;
@@ -707,7 +628,7 @@ class PlayScene extends Phaser.Scene {
     animateHealthBarDamage(target, oldHealth) {
         // Fallback: immediately update health bar if animation system fails
         if (!this.tweens) {
-            console.log('⚠️  No tween system, updating health bar directly');
+    
             this.updateHealthBar();
             return;
         }
@@ -728,9 +649,7 @@ class PlayScene extends Phaser.Scene {
         const startHealthWidth = (oldHealth / this.hero.maxHealth) * w;
         const endHealthWidth = (target.health / this.hero.maxHealth) * w;
         
-        console.log(`🎬 Animating hero health bar: ${startHealthWidth}px -> ${endHealthWidth}px`);
         
-        // Tween the health bar width
         this.tweens.add({
             targets: { width: startHealthWidth },
             width: endHealthWidth,
@@ -743,7 +662,6 @@ class PlayScene extends Phaser.Scene {
                 this.healthBar.fillRect(x, y, Math.max(0, currentWidth), h);
             },
             onComplete: () => {
-                console.log('🎬 Hero health bar animation complete');
                 this.updateHealthBar(); // Ensure final state is correct
             }
         });
@@ -765,7 +683,7 @@ class PlayScene extends Phaser.Scene {
     animateKnightHealthBarDamage(target, oldHealth) {
         // Fallback: immediately update health bar if animation system fails
         if (!this.tweens) {
-            console.log('⚠️  No tween system, updating knight health bar directly');
+    
             this.updateKnightHealthBar();
             return;
         }
@@ -786,7 +704,7 @@ class PlayScene extends Phaser.Scene {
         const startHealthWidth = (oldHealth / this.purpleKnight.maxHealth) * w;
         const endHealthWidth = (target.health / this.purpleKnight.maxHealth) * w;
         
-        console.log(`🎬 Animating knight health bar: ${startHealthWidth}px -> ${endHealthWidth}px`);
+
         
         // Tween the health bar width
         this.tweens.add({
@@ -801,8 +719,8 @@ class PlayScene extends Phaser.Scene {
                 this.knightHealthBar.fillRect(x, y, Math.max(0, currentWidth), h);
             },
             onComplete: () => {
-                console.log('🎬 Knight health bar animation complete');
-                this.updateKnightHealthBar(); // Ensure final state is correct
+
+ // Ensure final state is correct
             }
         });
         
@@ -917,8 +835,10 @@ class PlayScene extends Phaser.Scene {
         // Resume the paused animation to continue from frame 1
         attacker.anims.resume();
         
-        // Spawn active frame sensor with controlled hit window
-        this.spawnActiveFrameSensor(attacker);
+        // Spawn sword sensor exactly when the blade should be “live”
+        const target = attacker === this.hero ? this.purpleKnight : this.hero;
+        this.spawnSwordSensor(attacker, target, attacker.currentAttackType);
+
         
         // Emit sword arc particles at the moment of sensor spawn
         this.createSwordArcParticles(attacker);
@@ -926,10 +846,7 @@ class PlayScene extends Phaser.Scene {
         // Nudge camera opposite to swing direction for impact effect
         this.nudgeCamera(attacker);
         
-        // Trigger knight reaction if hero is attacking
-        // if (attacker === this.hero) {
-        //     this.knightReact();
-        // }
+
         
         // Reset attack state when animation completes
         attacker.once('animationcomplete', (animation) => {
@@ -993,6 +910,95 @@ class PlayScene extends Phaser.Scene {
         }
     };
 
+    spawnSwordSensor(attacker, target, attackType) {
+        // ------------------------------------------------------------------
+        // 1) Exact angle from attacker to target, not from the “facing” text
+        // ------------------------------------------------------------------
+        const angle = Phaser.Math.Angle.Between(attacker.x, attacker.y,
+                                                target.x,   target.y);
+
+        // ------------------------------------------------------------------
+        // 2) Push the sensor almost all the way to the target’s centre
+        //    (targetRadius = 28, so we stop 6 px short to sit *inside* it)
+        // ------------------------------------------------------------------
+        const targetRadius = 28;
+        const reach = Phaser.Math.Distance.Between(attacker.x, attacker.y,
+                                                   target.x,   target.y) - 6;
+
+        const offset = new Phaser.Math.Vector2(Math.cos(angle), Math.sin(angle))
+                       .scale(reach);
+
+        // ------------------------------------------------------------------
+        // 3) Big enough rectangle so slight aim errors still count
+        // ------------------------------------------------------------------
+        const sensorBody = this.matter.add.rectangle(
+            attacker.x + offset.x,
+            attacker.y + offset.y,
+            40, 40,                               // larger “blade” area
+            { isSensor: true, label: 'sword' }
+        );
+
+        // Use the same collision category the knight already reacts to
+        sensorBody.collisionFilter = { category: 0x0001, mask: 0xFFFF };
+
+        // ------------------------------------------------------------------
+        // Single-use collision handler
+        // ------------------------------------------------------------------
+        const onHit = (event) => {
+            for (const { bodyA, bodyB } of event.pairs) {
+                const hit = (bodyA === sensorBody && bodyB === target.body) ||
+                            (bodyB === sensorBody && bodyA === target.body);
+
+                if (hit) {
+                    this.handleAttackImpact(attacker, target, attackType);
+                    this.matter.world.off('collisionstart', onHit);
+                    this.matter.world.remove(sensorBody);
+                    return;
+                }
+            }
+        };
+        this.matter.world.on('collisionstart', onHit);
+
+        // Safety cleanup after 200 ms (≈ attack animation length)
+        this.time.delayedCall(200, () => {
+            this.matter.world.off('collisionstart', onHit);
+            this.matter.world.remove(sensorBody);
+        });
+
+        // (Optional) visualise for one frame while you test
+        // this.add.graphics().lineStyle(1, 0xffff00)
+        //     .strokeRect(sensorBody.position.x - 20, sensorBody.position.y - 20, 40, 40);
+    }
+
+    handleAttackImpact(attacker, target, attackType) {
+        if (!target || target.isDead || target.isTakingDamage) {
+            return;
+        }
+
+        // Base damage values
+        let baseDamage = 10;
+        if (attackType === 'melee2') baseDamage = 15;
+        if (attackType === 'special1') baseDamage = 25;
+        if (attackType === 'kick') baseDamage = 5;
+
+        // Calculate all modifiers
+        const armorMod = this.getArmorModifier(target, attacker.x, attacker.y, baseDamage);
+        const critMod = this.getCritModifier(attacker, target);
+        let finalDamage = baseDamage * armorMod * critMod;
+
+        // Apply directional blocking after all other calculations
+        finalDamage = this.applyDirectionalBlocking(target, attacker, finalDamage);
+
+        // Apply the final calculated damage
+        this.applyDamage(target, finalDamage);
+
+        // Play hit reaction and apply knockback
+        if (finalDamage > 0) {
+            this.playHitReaction(target);
+            this.applyKnockback(target, attacker, attackType);
+        }
+    }
+
     nudgeCamera = (attacker) => {
         const direction = attacker === this.hero ? this.facing : attacker.facing;
         const angle = this.getAngleFromDirection(direction);
@@ -1018,132 +1024,28 @@ class PlayScene extends Phaser.Scene {
         });
     };
 
-    spawnActiveFrameSensor = (attacker) => {
-        const r = 28; // reach - Restored to original size
-        const direction = attacker === this.hero ? this.facing : attacker.facing;
-        const angle = this.getAngleFromDirection(direction);
-        
-        // Create hit sensor at sword's reach
-        const sensor = this.matter.add.circle(
-            attacker.x + Math.cos(angle) * r,
-            attacker.y + Math.sin(angle) * r,
-            r,
-            { isSensor: true, label: 'hit-sensor' }
-        );
-        sensor.owner = attacker;
-        sensor.isActive = true;
-        
-        // Store reference for collision checking
-        this.activeSensors = this.activeSensors || [];
-        this.activeSensors.push(sensor);
-        
-        // Remove sensor after 100ms (active frame window)
-        this.time.delayedCall(100, () => {
-            if (this.matter.world && sensor.body && sensor.isActive) {
-                this.matter.world.remove(sensor);
-                sensor.isActive = false;
-                
-                // If sensor expired without hitting, still enter recovery
-                if (!sensor.hasHit) {
-                    attacker.isRecovering = true;
-                    this.time.delayedCall(150, () => {
-                        attacker.isRecovering = false;
-                        
-                        // Return to idle after recovery if not already in an action
-                        if (!attacker.isAttacking) {
-                            const direction = attacker === this.hero ? this.facing : attacker.facing;
-                            attacker.anims.play(`idle-${direction}`, true);
-                        }
-                    });
-                }
-            }
-            // Remove from active sensors list
-            const index = this.activeSensors.indexOf(sensor);
-            if (index > -1) {
-                this.activeSensors.splice(index, 1);
-            }
-        });
-    };
 
-    checkSensorOverlap = (sensor, targetBody) => {
-        // Only process during active frame window
-        if (!sensor.isActive || !sensor.owner) return;
-        
-        // Determine if target is valid for damage
-        const attacker = sensor.owner;
-        let isValidTarget = false;
-        
-        // Get damage based on attack type
-        let baseDamage = 10; // Default
-        if (attacker.currentAttackType === 'melee') {
-            baseDamage = 15;
-        } else if (attacker.currentAttackType === 'melee2') {
-            baseDamage = 25;
-        } else if (attacker.currentAttackType === 'special1') {
-            baseDamage = 40;
-        } else if (attacker.currentAttackType === 'kick') {
-            baseDamage = 10;
+
+
+
+    
+
+    handleDeath(character) {
+        character.isDead = true;
+        character.setVelocity(0, 0);
+
+        if (character === this.purpleKnight) {
+            this.hero.anims.play(`unsheath-${this.facing}`, true);
+            this.purpleKnight.anims.play('die', true);
+            this.showGameOverScreen(true); // Player wins
+        } else {
+            this.purpleKnight.anims.play(`unsheath-${this.purpleKnight.facing}`, true);
+            this.hero.anims.play('die', true);
+            this.showGameOverScreen(false); // Player loses
         }
-        
-        if (attacker === this.hero && targetBody.label === 'knight') {
-            isValidTarget = true;
-        } else if (attacker === this.purpleKnight && targetBody.label === 'hero') {
-            isValidTarget = true;
-        }
-        
-        // Process hit on first valid overlap
-        if (isValidTarget && targetBody.gameObject) {
-            // Mark sensor as having hit something
-            sensor.hasHit = true;
-            
-            // Set hitLanded flag for Q-learning reward
-            if (attacker === this.purpleKnight) {
-                attacker.hitLanded = true;
-                this.hitCount++;
-            }
-            
-            // Get hit coordinates (sensor position represents the hit point)
-            const hitX = sensor.position.x;
-            const hitY = sensor.position.y;
-            
-            // Calculate final damage with modifiers including hit location
-            const armorMod = this.getArmorModifier(targetBody.gameObject, hitX, hitY, baseDamage);
-            const critMod = this.getCritModifier(attacker, targetBody.gameObject);
-            let dmg = baseDamage * armorMod * critMod;
-            
-            // Apply directional blocking bonus
-            dmg = this.applyDirectionalBlocking(targetBody.gameObject, attacker, dmg);
-            
-            console.log(`💢 Final damage calculated: ${dmg.toFixed(2)} (base: ${baseDamage}, armor: ${armorMod.toFixed(2)}, crit: ${critMod.toFixed(2)})`);
-            
-            // Apply damage and effects
-            this.applyDamage(targetBody.gameObject, dmg);
-            this.applyKnockback(targetBody.gameObject, attacker, attacker.currentAttackType);
-            this.playHitReaction(targetBody.gameObject);
-            
-            // Start recovery period for attacker
-            attacker.isRecovering = true;
-            this.time.delayedCall(150, () => {
-                attacker.isRecovering = false;
-                
-                // Return to idle after recovery if not already in an action
-                if (!attacker.isAttacking) {
-                    const direction = attacker === this.hero ? this.facing : attacker.facing;
-                    attacker.anims.play(`idle-${direction}`, true);
-                }
-            });
-            
-            // Remove sensor immediately to prevent multi-hits
-            this.matter.world.remove(sensor);
-            sensor.isActive = false;
-            
-            // Remove from active sensors list
-            const index = this.activeSensors?.indexOf(sensor);
-            if (index > -1) {
-                this.activeSensors.splice(index, 1);
-            }
-        }
-    };
+    }
+
+
 
     getArmorModifier = (target, hitX, hitY, damage) => {
         // Determine armor slot based on blocking status and hit zone
@@ -1208,7 +1110,7 @@ class PlayScene extends Phaser.Scene {
                 const staminaCost = Math.max(0, originalDamage - 5); // damage - 5, minimum 0
                 target.stamina -= staminaCost;
                 target.stamina = Math.max(0, target.stamina); // Don't go below 0
-                console.log(`Knight blocked attack: ${originalDamage} damage -> ${staminaCost} stamina cost. Stamina: ${target.stamina}/${target.maxStamina}`);
+        
             }
         }
         
@@ -1247,9 +1149,9 @@ class PlayScene extends Phaser.Scene {
     applyDamage = (target, damage) => {
         if (!target || target.isDead) return;
 
-        console.log(`[DEBUG] applyDamage called for ${target.label} with ${damage.toFixed(2)} damage.`);
 
-        console.log(`💥 DAMAGE APPLIED: ${damage.toFixed(2)} to ${target === this.hero ? 'HERO' : 'KNIGHT'}, health: ${target.health.toFixed(1)} -> ${(target.health - damage).toFixed(1)}`);
+
+
         
         // Store old health for animation
         const oldHealth = target.health;
@@ -1263,11 +1165,13 @@ class PlayScene extends Phaser.Scene {
         
         // Add visual feedback for damage taken - FORCE update health bars
         if (target === this.hero) {
-            console.log(`🩺 Updating HERO health bar: ${oldHealth} -> ${target.health}`);
+
             this.animateHealthBarDamage(target, oldHealth);
+            this.updateHealthBar();
         } else if (target === this.purpleKnight) {
-            console.log(`🩺 Updating KNIGHT health bar: ${oldHealth} -> ${target.health}`);
+
             this.animateKnightHealthBarDamage(target, oldHealth);
+            this.updateKnightHealthBar();
         }
 
         // Death check
@@ -1316,7 +1220,8 @@ class PlayScene extends Phaser.Scene {
     };
 
     playHitReaction = (target) => {
-        console.log(`[DEBUG] playHitReaction called for ${target.label}`);
+
+        if (!target.active) return; // Prevent errors if target is destroyed
         // Visual feedback
         target.setTint(0xff0000);
         
@@ -1331,56 +1236,13 @@ class PlayScene extends Phaser.Scene {
         
         // Reset tint after duration
         this.time.delayedCall(200, () => {
-            if (target === this.purpleKnight) {
-                target.setTint(0x9400D3);
-            } else {
-                target.clearTint();
+            if (target.active) { // Check if target is still active
+                if (target === this.purpleKnight) {
+                    target.setTint(0x9400D3);
+                } else {
+                    target.clearTint();
+                }
             }
-        });
-    };
-
-    handleDeath = (victim) => {
-        // Stop all updates and AI
-        this.isDeathSequenceActive = true;
-        victim.isDead = true;
-        victim.setVelocity(0, 0);
-
-        // If the victim is the knight, cancel any ongoing movement
-        if (victim === this.purpleKnight) {
-            victim.currentMovement = null;
-        }
-
-        // Immediately lock the other character
-        const other = (victim === this.hero) ? this.purpleKnight : this.hero;
-        other.setVelocity(0, 0);
-
-        if (victim === this.purpleKnight) {
-            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(this.hero.x, this.hero.y, victim.x, victim.y));
-            this.hero.anims.playReverse(`unsheath-${direction}`);
-            
-            // Show win screen and prepare for restart
-            this.time.delayedCall(1000, () => {
-                this.showGameOverScreen(true);
-                // No automatic restart, wait for player input if any
-            });
-            this.knightHealthBar.setVisible(false);
-            this.knightNameText.setVisible(false);
-            this.knightStaminaBar.setVisible(false);
-        } else { // victim is hero
-            const victor = this.purpleKnight;
-            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victim.y));
-            victor.anims.playReverse(`unsheath-${direction}`);
-            this.healthBar.setVisible(false);
-            this.cameras.main.stopFollow();
-            this.time.delayedCall(1500, () => this.showGameOverScreen(false));
-        }
-
-        victim.anims.play('die', true);
-        victim.once('animationcomplete-die', () => {
-            // if (victim.body) {
-            //     this.matter.world.remove(victim.body);  
-            //     victim.body = null;
-            // }
         });
     };
 
@@ -1415,7 +1277,7 @@ class PlayScene extends Phaser.Scene {
                         this.performAttack(knight, 'melee');
                         return 'SUCCESS';
                     } else {
-                        console.log(`Knight out of stamina for attack: ${knight.stamina}/15`);
+                
                         return 'FAILURE';
                     }
                 }
@@ -1428,7 +1290,7 @@ class PlayScene extends Phaser.Scene {
                         // Check if movement would cause collision with player
                         const moveDistance = 2 * 8; // speed * frames (rough estimate)
                         if (distanceToPlayer > moveDistance + 40) { // 40px buffer to prevent overlap
-                            console.log(`Starting approach movement: distance=${distanceToPlayer.toFixed(1)}, angle=${angle.toFixed(2)}, direction=${direction}`);
+                    
                             knight.stamina -= 5;
                             knight.staminaRegenDelay = 250; // 0.25s delay for light movement
                             knight.currentMovement = 'approach';
@@ -1437,18 +1299,18 @@ class PlayScene extends Phaser.Scene {
                             knight.movementDirection = direction;
                             return 'SUCCESS';
                         } else {
-                            console.log(`Approach would cause collision, staying in place`);
+
                             return 'FAILURE';
                         }
                     } else {
-                        console.log(`Knight out of stamina for approach: ${knight.stamina}/5`);
+
                         return 'FAILURE';
                     }
                 } else if (knight.movementDisabled) {
-                    console.log(`Knight movement disabled - exhausted!`);
+
                     return 'FAILURE';
                 } else {
-                    console.log(`Too close for approach: distance=${distanceToPlayer.toFixed(1)}, staying idle`);
+
                     knight.setVelocity(0, 0);
                     knight.anims.play(`idle-${direction}`, true);
                     return 'SUCCESS';
@@ -1465,10 +1327,9 @@ class PlayScene extends Phaser.Scene {
                     knight.movementDirection = direction; // Face towards player
                     return 'SUCCESS';
                 } else if (knight.movementDisabled) {
-                    console.log(`Knight lunge blocked - exhausted!`);
                     return 'FAILURE';
                 } else {
-                    console.log(`Knight out of stamina for lunge_left: ${knight.stamina}/20`);
+
                     return 'FAILURE';
                 }
                 
@@ -1483,10 +1344,9 @@ class PlayScene extends Phaser.Scene {
                     knight.movementDirection = direction; // Face towards player
                     return 'SUCCESS';
                 } else if (knight.movementDisabled) {
-                    console.log(`Knight lunge blocked - exhausted!`);
                     return 'FAILURE';
                 } else {
-                    console.log(`Knight out of stamina for lunge_right: ${knight.stamina}/20`);
+
                     return 'FAILURE';
                 }
                 
@@ -1498,11 +1358,7 @@ class PlayScene extends Phaser.Scene {
     }
 
     update(time, delta) {
-        this.updateSensorChecks();
         
-        // Symmetrical melee hit detection for both characters
-        // this.checkMeleeHit(this.hero, this.purpleKnight);
-        // this.checkMeleeHit(this.purpleKnight, this.hero);
 
         if (time - this.lastScreenshotTime > this.screenshotInterval) {
             this.takeScreenshot();
@@ -1680,7 +1536,6 @@ class PlayScene extends Phaser.Scene {
             for (let i = 0; i < gamepads.length; i++) {
                 if (gamepads[i] && gamepads[i].connected) {
                     this.gamepad = gamepads[i];
-                    console.log(`Xbox controller detected during gameplay! ID: ${this.gamepad.id}`);
                     this.logEvt(this.hero, 'controller_detected_runtime');
                     break;
                 }
@@ -1712,12 +1567,7 @@ class PlayScene extends Phaser.Scene {
                 gamepadInput.special1 = pad.buttons[7].pressed; // RT - special1
                 gamepadInput.space = pad.buttons[4].pressed; // LB (Left Shoulder) - run
                 
-                // Debug: Log button states when any are pressed
-                for (let i = 0; i < pad.buttons.length; i++) {
-                    if (pad.buttons[i].pressed) {
-                        console.log(`Button ${i} pressed - ${this.getButtonName(i)}`);
-                    }
-                }
+
             }
         }
 
@@ -1779,8 +1629,6 @@ class PlayScene extends Phaser.Scene {
                 this.hero.stamina -= 30;
                 this.hero.anims.play(`front-flip-${this.facing}`, true);
                 this.logEvt(this.hero, 'front_flip');
-            } else {
-                console.log('Not enough stamina for dodge');
             }
             return;
         }
@@ -1788,7 +1636,6 @@ class PlayScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(b) || (gamepadInput.block && !this.lastGamepadState?.block)) {
             // Check if blocking is disabled due to stamina exhaustion
             if (this.hero.blockDisabled) {
-                console.log('❌ Cannot block - shield broken!');
                 return;
             }
             this.hero.setVelocity(0, 0);
@@ -1862,7 +1709,6 @@ class PlayScene extends Phaser.Scene {
                     const currentSpeed = 3;
                     velocity.normalize().scale(currentSpeed);
                     const animPrefix = 'walk';
-                    console.log('Out of stamina - forced to walk');
                 }
             }
             
@@ -1929,182 +1775,7 @@ class PlayScene extends Phaser.Scene {
         try {
             this.updatePlayerDebugInfo();
         } catch (e) {
-            console.log('Debug info update failed:', e);
         }
-    }
-
-    checkMeleeHit(attacker, target) {
-        if (!attacker || !target || target.isTakingDamage || target.isDead) {
-            return;
-        }
-    
-        const currentAnim = attacker.anims.currentAnim;
-        const isAttacking = currentAnim && ['melee', 'melee2', 'special1', 'kick'].some(prefix => currentAnim.key.startsWith(prefix));
-    
-        if (!isAttacking || !attacker.anims.isPlaying) {
-            return;
-        }
-        
-        // Check hit only during the middle of the animation swing
-        const frame = currentAnim.getFrameByProgress(attacker.anims.getProgress());
-        const isHitFrame = frame && frame.index >= 4 && frame.index <= 10;
-        
-        if (!isHitFrame) {
-            return;
-        }
-
-        const distance = Phaser.Math.Distance.Between(attacker.x, attacker.y, target.x, target.y);
-        const hitRange = 65; // A generous range for combat
-    
-        if (distance < hitRange) {
-            // Check for blocking
-            if (target.isBlocking) {
-                const attackAngle = Phaser.Math.Angle.Between(target.x, target.y, attacker.x, attacker.y);
-                const targetFacingAngle = this.getAngleFromDirection(target.facing);
-                const angleDiff = Phaser.Math.Angle.ShortestBetween(Phaser.Math.RadToDeg(targetFacingAngle), Phaser.Math.RadToDeg(attackAngle));
-        
-                if (Math.abs(angleDiff) <= 45) { // 90-degree block arc
-                    console.log(`${target.label} blocked ${attacker.label}'s attack!`);
-                    return; 
-                }
-            }
-        
-            // A hit is detected.
-            const attackType = currentAnim.key.split('-')[0];
-            target.isTakingDamage = true;
-            this.takeDamage(target, attacker, attackType);
-
-            // Prevent multiple hits from the same animation
-            this.time.delayedCall(1000, () => {
-                if (target.active) {
-                    target.isTakingDamage = false;
-                }
-            });
-        }
-    }
-
-    getButtonName(index) {
-        const buttonNames = {
-            0: 'A', 1: 'B', 2: 'X', 3: 'Y',
-            4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
-            8: 'Back', 9: 'Start', 10: 'Xbox', 11: 'Ybox',
-            12: 'Left Stick', 13: 'Right Stick', 14: 'D-Pad Up',
-            15: 'D-Pad Down', 16: 'D-Pad Left', 17: 'D-Pad Right'
-        };
-        return buttonNames[index] || 'Unknown';
-    }
-
-    takeDamage(victim, attacker, attackType) {
-        if (victim.isDead) return;
-
-        let damage = 10; // Default melee damage
-        if (attackType === 'kick') damage = 5;
-        if (attackType === 'melee2') damage = 15;
-        if (attackType === 'special1') damage = 25;
-
-        // Apply Damage and update health bar
-        const oldHealth = victim.health;
-        victim.health -= damage;
-        victim.health = Math.max(0, victim.health);
-
-        console.log(`💥 DAMAGE APPLIED: ${damage.toFixed(2)} to ${victim.label}, health: ${oldHealth.toFixed(1)} -> ${victim.health.toFixed(1)}`);
-        this.logEvt(victim, `took_damage_${damage.toFixed(1)}`);
-        
-        if (victim === this.hero) {
-            this.animateHealthBarDamage(victim, oldHealth);
-        } else if (victim === this.purpleKnight) {
-            this.animateKnightHealthBarDamage(victim, oldHealth);
-        }
-
-        // Play hit reaction (tint and animation)
-        victim.setTint(0xff0000);
-        this.time.delayedCall(200, () => {
-            if (victim.active) {
-                victim.clearTint();
-                if (victim === this.purpleKnight) victim.setTint(0x9400D3);
-            }
-        });
-        
-        const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victim.x, victim.y, attacker.x, attacker.y));
-        victim.anims.play(`take-damage-${direction}`, true);
-
-
-        // Check for death
-        if (victim.health <= 0) {
-            this.handleDeath(victim);
-        }
-    }
-
-    handleDeath(victim) {
-        if (victim.isDead) return;
-
-        this.isDeathSequenceActive = true;
-        victim.isDead = true;
-        victim.setVelocity(0, 0);
-
-        const other = (victim === this.hero) ? this.purpleKnight : this.hero;
-        other.setVelocity(0, 0);
-
-        if (victim === this.purpleKnight) {
-            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(this.hero.x, this.hero.y, victim.x, victim.y));
-            this.hero.anims.playReverse(`unsheath-${direction}`);
-            this.time.delayedCall(1000, () => this.showGameOverScreen(true));
-            this.knightHealthBar.setVisible(false);
-            this.knightNameText.setVisible(false);
-            this.knightStaminaBar.setVisible(false);
-        } else { // victim is hero
-            const victor = this.purpleKnight;
-            const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(victor.x, victor.y, victim.x, victim.y));
-            victor.anims.playReverse(`unsheath-${direction}`);
-            this.healthBar.setVisible(false);
-            this.cameras.main.stopFollow();
-            this.time.delayedCall(1500, () => this.showGameOverScreen(false));
-        }
-
-        victim.anims.play('die', true);
-        victim.once('animationcomplete-die', () => {
-            // if (victim.body) {
-            //     this.matter.world.remove(victim.body);  
-            //     victim.body = null;
-            // }
-        });
-    }
-
-    getAngleFromDirection(direction) {
-        const angles = {
-            'e': 0, 'se': 45, 's': 90, 'sw': 135,
-            'w': 180, 'nw': -135, 'n': -90, 'ne': -45
-        };
-        return Phaser.Math.DegToRad(angles[direction]);
-    }
-
-    getDirectionFromAngle(angle) {
-        const degrees = Phaser.Math.RadToDeg(angle);
-        let direction = 's';
-        if (degrees >= -22.5 && degrees < 22.5) direction = 'e';
-        else if (degrees >= 22.5 && degrees < 67.5) direction = 'se';
-        else if (degrees >= 67.5 && degrees < 112.5) direction = 's';
-        else if (degrees >= 112.5 && degrees < 157.5) direction = 'sw';
-        else if (degrees >= 157.5 || degrees < -157.5) direction = 'w';
-        else if (degrees >= -157.5 && degrees < -112.5) direction = 'nw';
-        else if (degrees >= -112.5 && degrees < -67.5) direction = 'n';
-        else if (degrees >= -67.5 && degrees < -22.5) direction = 'ne';
-        return direction;
-    }
-
-    getKnightState(knight) {
-        // Calculate distance to player and bin it
-        const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        let distBin;
-        if (distanceToPlayer < 60) distBin = 'close';
-        else if (distanceToPlayer < 120) distBin = 'medium';
-        else distBin = 'far';
-        
-        // Get player direction relative to knight
-        const angle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        const playerDir = this.getDirectionFromAngle(angle);
-        
-        return { distBin, playerDir };
     }
 
     updateStamina(delta) {
@@ -2123,7 +1794,7 @@ class PlayScene extends Phaser.Scene {
             this.hero.movementDisabled = true;
             this.hero.movementDisableTimer = 300; // 0.3 seconds movement stun
             this.hero.setVelocity(0, 0); // Stop moving immediately
-            console.log('💀 HERO EXHAUSTED! Shield broken + movement stunned');
+
             // Force stop blocking animation if currently blocking
             if (this.hero.anims.currentAnim && this.hero.anims.currentAnim.key.includes('shield-block')) {
                 this.hero.isBlocking = false;
@@ -2139,7 +1810,7 @@ class PlayScene extends Phaser.Scene {
             this.purpleKnight.isBlocking = false; // Force stop blocking
             this.purpleKnight.setVelocity(0, 0); // Stop moving immediately
             this.purpleKnight.currentMovement = null; // Cancel any ongoing movement
-            console.log('💀 KNIGHT EXHAUSTED! Shield broken + movement stunned');
+
             // Force stop blocking animation
             const direction = this.getDirectionFromAngle(Phaser.Math.Angle.Between(this.purpleKnight.x, this.purpleKnight.y, this.hero.x, this.hero.y));
             this.purpleKnight.anims.play(`idle-${direction}`, true);
@@ -2151,7 +1822,7 @@ class PlayScene extends Phaser.Scene {
             if (this.hero.blockDisableTimer <= 0) {
                 this.hero.blockDisabled = false;
                 this.hero.stamina = 1; // Jump-start stamina recovery
-                console.log('🛡️ Hero shield recovered!');
+
             }
         }
         
@@ -2159,7 +1830,7 @@ class PlayScene extends Phaser.Scene {
             this.hero.movementDisableTimer -= delta;
             if (this.hero.movementDisableTimer <= 0) {
                 this.hero.movementDisabled = false;
-                console.log('🏃 Hero can move again!');
+
             }
         }
         
@@ -2168,7 +1839,7 @@ class PlayScene extends Phaser.Scene {
             if (this.purpleKnight.blockDisableTimer <= 0) {
                 this.purpleKnight.blockDisabled = false;
                 this.purpleKnight.stamina = 1; // Jump-start stamina recovery
-                console.log('🛡️ Knight shield recovered!');
+
             }
         }
         
@@ -2176,7 +1847,7 @@ class PlayScene extends Phaser.Scene {
             this.purpleKnight.movementDisableTimer -= delta;
             if (this.purpleKnight.movementDisableTimer <= 0) {
                 this.purpleKnight.movementDisabled = false;
-                console.log('🏃 Knight can move again!');
+
             }
         }
         
@@ -2226,6 +1897,8 @@ class PlayScene extends Phaser.Scene {
         }
     }
 
+
+
     updatePlayerDebugInfo() {
         if (!this.keys || !this.debugKeys) return;
         
@@ -2273,47 +1946,14 @@ class PlayScene extends Phaser.Scene {
         if (movementEl) movementEl.textContent = movement;
     }
 
-    updateSensorChecks = () => {
-        if (!this.activeSensors || this.activeSensors.length === 0) {
-            return;
-        }
-    
-        // Iterate backwards so we can safely remove sensors if they become invalid
-        for (let i = this.activeSensors.length - 1; i >= 0; i--) {
-            const sensor = this.activeSensors[i];
-    
-            // Skip if sensor is invalid or no longer active in the world
-            if (!sensor || !sensor.body || !sensor.owner || !sensor.isActive) {
-                continue;
-            }
-    
-            const attacker = sensor.owner;
-            const target = (attacker === this.hero) ? this.purpleKnight : this.hero;
-    
-            // Manual Overlap Check: Replaces the unreliable this.matter.overlap() for static bodies.
-            // We calculate the distance between the centers and see if it's less than the sum of their radii.
-            if (target && target.body) {
-                const distance = Phaser.Math.Distance.Between(
-                    sensor.position.x, sensor.position.y, 
-                    target.x, target.y
-                );
-                const combinedRadius = sensor.circleRadius + target.body.circleRadius;
 
-                if (distance < combinedRadius) {
-                    // A hit is detected. The checkSensorOverlap function handles the rest.
-                    this.checkSensorOverlap(sensor, target.body);
-                    // checkSensorOverlap deactivates the sensor, preventing multiple hits from one swing.
-                }
-            }
-        }
-    }
 
     takeScreenshot() {
         const mainCanvas = this.game.canvas;
         const screenshotCanvas = document.getElementById('screenshot-canvas');
 
         if (!screenshotCanvas) {
-            console.error('Screenshot canvas not found!');
+    
             return;
         }
 
