@@ -192,7 +192,6 @@ class PlayScene extends Phaser.Scene {
         // Initialize attack state
         this.hero.isAttacking = false;
         this.hero.currentAttackType = null;
-        this.hero.isRecovering = false;
         this.hero.isBlocking = false;
         this.hero.isDead = false;
         
@@ -202,8 +201,6 @@ class PlayScene extends Phaser.Scene {
         this.hero.staminaRegenRate = 1; // stamina per frame when not using
         this.hero.blockDisabled = false;
         this.hero.blockDisableTimer = 0;
-        this.hero.movementDisabled = false;
-        this.hero.movementDisableTimer = 0;
         this.hero.staminaRegenDelay = 0;
         
         // Initialize armor attributes
@@ -381,9 +378,10 @@ class PlayScene extends Phaser.Scene {
             this.blueBoundaries = this.add.graphics().setDepth(100).setVisible(false);
             this.greenBoundaries = this.add.graphics().setDepth(100).setVisible(false);
             this.input.keyboard.on('keydown-X', () => {
-                redBoundaries.setVisible(!redBoundaries.visible);
-                this.blueBoundaries.setVisible(!this.blueBoundaries.visible);
-                this.greenBoundaries.setVisible(!this.greenBoundaries.visible);
+            this.debugGraphicsVisible = !this.debugGraphicsVisible;
+            redBoundaries.setVisible(this.debugGraphicsVisible);
+            this.blueBoundaries.setVisible(this.debugGraphicsVisible);
+            this.greenBoundaries.setVisible(this.debugGraphicsVisible);
             });
             this.redBoundaries = redBoundaries; // Store for update loop
             this.boundaryRects = boundaryRects; // Store for update loop
@@ -938,8 +936,19 @@ class PlayScene extends Phaser.Scene {
             { isSensor: true, label: 'sword' }
         );
 
-        // Use the same collision category the knight already reacts to
-        sensorBody.collisionFilter = { category: 0x0001, mask: 0xFFFF };
+        // Use the attacker's own collision category for the sensor. This makes the sensor
+        // act as a proxy for the attacker, ensuring it collides with the target correctly.
+        sensorBody.collisionFilter = {
+            category: attacker.body.collisionFilter.category,
+            mask: 0xFFFF // Check against all other categories
+        };
+
+        // (Optional) visualise for one frame while you test
+        let sensorViz = null;
+        if (this.debugGraphicsVisible) {
+            sensorViz = this.add.graphics().lineStyle(1, 0xffff00)
+                .strokeRect(sensorBody.position.x - 20, sensorBody.position.y - 20, 40, 40);
+        }
 
         // ------------------------------------------------------------------
         // Single-use collision handler
@@ -953,6 +962,7 @@ class PlayScene extends Phaser.Scene {
                     this.handleAttackImpact(attacker, target, attackType);
                     this.matter.world.off('collisionstart', onHit);
                     this.matter.world.remove(sensorBody);
+                    if (sensorViz) sensorViz.destroy();
                     return;
                 }
             }
@@ -963,11 +973,8 @@ class PlayScene extends Phaser.Scene {
         this.time.delayedCall(200, () => {
             this.matter.world.off('collisionstart', onHit);
             this.matter.world.remove(sensorBody);
+            if (sensorViz) sensorViz.destroy();
         });
-
-        // (Optional) visualise for one frame while you test
-        // this.add.graphics().lineStyle(1, 0xffff00)
-        //     .strokeRect(sensorBody.position.x - 20, sensorBody.position.y - 20, 40, 40);
     }
 
     handleAttackImpact(attacker, target, attackType) {
@@ -993,7 +1000,7 @@ class PlayScene extends Phaser.Scene {
         this.applyDamage(target, finalDamage);
 
         // Play hit reaction and apply knockback
-        if (finalDamage > 0) {
+        if (finalDamage > 0 && !target.isDead) {
             this.playHitReaction(target);
             this.applyKnockback(target, attacker, attackType);
         }
@@ -1571,11 +1578,8 @@ class PlayScene extends Phaser.Scene {
             }
         }
 
-        // Early return if in recovery period or movement disabled
-        if (this.hero.isRecovering || this.hero.movementDisabled) {
-            if (this.hero.movementDisabled) {
-                this.hero.setVelocity(0, 0); // Ensure no movement during stun
-            }
+        if (this.hero.isAttacking) {
+            this.hero.setVelocity(0, 0); // Ensure no movement during attack
             return;
         }
         
@@ -1791,8 +1795,7 @@ class PlayScene extends Phaser.Scene {
         if (this.hero.stamina <= 0 && !this.hero.blockDisabled) {
             this.hero.blockDisabled = true;
             this.hero.blockDisableTimer = 1000; // 1 second in milliseconds
-            this.hero.movementDisabled = true;
-            this.hero.movementDisableTimer = 300; // 0.3 seconds movement stun
+
             this.hero.setVelocity(0, 0); // Stop moving immediately
 
             // Force stop blocking animation if currently blocking
@@ -1805,8 +1808,7 @@ class PlayScene extends Phaser.Scene {
         if (this.purpleKnight.stamina <= 0 && !this.purpleKnight.blockDisabled) {
             this.purpleKnight.blockDisabled = true;
             this.purpleKnight.blockDisableTimer = 1000; // 1 second in milliseconds
-            this.purpleKnight.movementDisabled = true;
-            this.purpleKnight.movementDisableTimer = 300; // 0.3 seconds movement stun
+
             this.purpleKnight.isBlocking = false; // Force stop blocking
             this.purpleKnight.setVelocity(0, 0); // Stop moving immediately
             this.purpleKnight.currentMovement = null; // Cancel any ongoing movement
