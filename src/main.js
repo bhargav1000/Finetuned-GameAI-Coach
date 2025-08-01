@@ -1,4 +1,4 @@
-import { Q, α, γ, ε, key, chooseAction, updateQ } from './RL.js';
+import { Q, α, γ, ε, key, chooseAction, updateQ, saveQ } from './RL.js';
 
 class PlayScene extends Phaser.Scene {
     constructor() {
@@ -151,7 +151,7 @@ class PlayScene extends Phaser.Scene {
             this.anims.create({
                 key: `front-flip-${direction}`,
                 frames: this.anims.generateFrameNumbers('front-flip', { start: startFrame, end: startFrame + 14 }),
-                frameRate: 24,
+                frameRate: 45,
                 repeat: 0
             });
         });
@@ -276,6 +276,8 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.currentMovement = null;
         this.purpleKnight.movementDuration = 0;
         this.purpleKnight.isDead = false;
+        this.purpleKnight.rewardAccumulator = 0;     // track per-frame reward
+        this.lastRewardTick = 0;
         
         // Initialize stamina for knight
         this.purpleKnight.maxStamina = 100;
@@ -1015,6 +1017,8 @@ class PlayScene extends Phaser.Scene {
         if (attackType === 'special1') baseDamage = 25;
         if (attackType === 'kick') baseDamage = 5;
 
+        const wasKnight = (attacker === this.purpleKnight && target === this.hero);
+
         // Calculate all modifiers (blocking is now handled above)
         const armorMod = this.getArmorModifier(target, attacker.x, attacker.y, baseDamage);
         const critMod = this.getCritModifier(attacker, target);
@@ -1022,6 +1026,14 @@ class PlayScene extends Phaser.Scene {
 
         // Apply the final calculated damage
         this.applyDamage(target, finalDamage);
+
+        if (wasKnight && finalDamage > 0) {          // knight hit hero
+            const next   = this.getKnightState(this.purpleKnight);
+            updateQ(this.purpleKnight.lastState,
+                    this.purpleKnight.lastAction,
+                    20,                              // positive reward
+                    next);
+        }
 
         // Play hit reaction and apply knockback
         if (finalDamage > 0 && !target.isDead) {
@@ -1074,6 +1086,7 @@ class PlayScene extends Phaser.Scene {
             this.hero.anims.play('die', true);
             this.showGameOverScreen(false); // Player loses
         }
+        setTimeout(saveQ, 0);         // save once the episode ends
     }
 
 
@@ -1135,6 +1148,14 @@ class PlayScene extends Phaser.Scene {
         
         // Ensure health doesn't go below 0
         target.health = Math.max(0, target.health);
+
+        if (target === this.purpleKnight && damage > 0) {
+            const next = this.getKnightState(this.purpleKnight);
+            updateQ(this.purpleKnight.lastState,
+                    this.purpleKnight.lastAction,
+                    -20,                            // negative reward
+                    next);
+        }
         
         // Log damage event
         this.logEvt(target, `took_damage_${damage.toFixed(1)}`);
@@ -1152,6 +1173,13 @@ class PlayScene extends Phaser.Scene {
 
         // Death check
         if (target.health <= 0 && !target.isDead) {
+            if (target === this.purpleKnight) {      // knight DIED  (-100)
+                const next = {distBin:'dead',playerDir:'x'};
+                updateQ(this.purpleKnight.lastState,
+                        this.purpleKnight.lastAction,
+                        -100,
+                        next);
+            }
             this.handleDeath(target);
         } else if (!target.isDead) {
             target.isTakingDamage = true;
@@ -1254,6 +1282,9 @@ class PlayScene extends Phaser.Scene {
         const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
         const lungeSpeed = 3;
         
+        knight.lastState  = this.getKnightState(knight);
+        knight.lastAction = ctx.action;
+
         switch(ctx.action) {
             case 'attack':
                 if (distanceToPlayer < 100) { // Only attack if close enough
@@ -1352,6 +1383,7 @@ class PlayScene extends Phaser.Scene {
 
         if (this.gameOverActive) {
             if (Phaser.Input.Keyboard.JustDown(this.keys.q)) {
+                saveQ();                // persist learning before restart
                 this.scene.restart();
             }
             return; // Lock all other updates
@@ -1361,6 +1393,18 @@ class PlayScene extends Phaser.Scene {
             this.hero.setVelocity(0, 0);
             this.purpleKnight.setVelocity(0, 0);
             return;
+        }
+
+        // 3.  Small time-penalty every 1000 ms so knight doesn’t idle
+        if (time - this.lastRewardTick > 1000) {
+            this.lastRewardTick = time;
+            if (this.purpleKnight.lastState && this.purpleKnight.lastAction) {
+                const next = this.getKnightState(this.purpleKnight);
+                updateQ(this.purpleKnight.lastState,
+                        this.purpleKnight.lastAction,
+                        -1,   // tiny cost for standing around
+                        next);
+            }
         }
 
         // Handle stamina updates for both characters every frame

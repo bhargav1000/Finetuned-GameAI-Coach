@@ -13,3 +13,18 @@ export function updateQ(prev,act,reward,next){
   const n = Q[key(next)] || (Q[key(next)] = Object.fromEntries(acts.map(a=>[a,0])));
   r[act] += α*(reward + γ*Math.max(...Object.values(n)) - r[act]);
 }
+
+// --- NEW : load any saved table when the module is first imported ------
+const saved = (() => {
+  try { return JSON.parse(localStorage.getItem('knightQ')||'null'); }
+  catch(e){ return null; }
+})();
+if (saved && typeof saved === 'object') {
+  Object.assign(Q, saved);
+}
+
+// helper so anyone can save after training episodes
+export function saveQ() {
+  try { localStorage.setItem('knightQ', JSON.stringify(Q)); }
+  catch(e){}
+}
