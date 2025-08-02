@@ -28,7 +28,6 @@ class PlayScene extends Phaser.Scene {
         this.load.spritesheet('unsheath', 'assets/character/UnSheathSword.png', { frameWidth: 128, frameHeight: 128 });
         this.load.spritesheet('shield-block-start', 'assets/character/ShieldBlockStart.png', { frameWidth: 128, frameHeight: 128 });
         this.load.spritesheet('shield-block-mid', 'assets/character/ShieldBlockMid.png', { frameWidth: 128, frameHeight: 128 });
-        this.load.spritesheet('front-flip', 'assets/character/FrontFlip.png', { frameWidth: 128, frameHeight: 128 });
         this.load.image('healthbar', 'assets/character/healthbar.png');
     }
 
@@ -47,7 +46,6 @@ class PlayScene extends Phaser.Scene {
         this.keys.q = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
         this.keys.d = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
         this.keys.b = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
-        this.keys.f = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
         this.keys.c = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
         this.keys.p = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P); // Screenshot key
 
@@ -57,7 +55,6 @@ class PlayScene extends Phaser.Scene {
         this.walkSpeed = 200;
         this.runSpeed = 350;
         this.rollSpeed = 400;
-        this.frontFlipSpeed = 300;
         this.facing = 's'; // Default facing direction
         this.isDeathSequenceActive = false;
         this.shieldValue = 15;
@@ -148,12 +145,7 @@ class PlayScene extends Phaser.Scene {
                 repeat: -1
             });
 
-            this.anims.create({
-                key: `front-flip-${direction}`,
-                frames: this.anims.generateFrameNumbers('front-flip', { start: startFrame, end: startFrame + 14 }),
-                frameRate: 45,
-                repeat: 0
-            });
+
         });
 
         // Add a single death animation, as it's not directional
@@ -232,7 +224,7 @@ class PlayScene extends Phaser.Scene {
                 return;
             }
 
-            if (animation.key.startsWith('melee-') || animation.key.startsWith('rolling-') || animation.key.startsWith('take-damage-') || animation.key.startsWith('kick-') || animation.key.startsWith('melee2-') || animation.key.startsWith('special1-') || animation.key.startsWith('front-flip-')) {
+            if (animation.key.startsWith('melee-') || animation.key.startsWith('rolling-') || animation.key.startsWith('take-damage-') || animation.key.startsWith('kick-') || animation.key.startsWith('melee2-') || animation.key.startsWith('special1-')) {
                 // After an action, check if we should return to blocking or idle.
                 if (this.keys.b.isDown && !this.hero.blockDisabled) {
                     this.hero.isBlocking = true;
@@ -1550,13 +1542,13 @@ class PlayScene extends Phaser.Scene {
         }
 
         // --- Hero Input & Movement ---
-        const { left, right, up, down, space, m, r, k, n, s, b, f, c } = this.keys;
+        const { left, right, up, down, space, m, r, k, n, s, b, c } = this.keys;
         
         // Xbox controller input
         let gamepadInput = {
             left: false, right: false, up: false, down: false,
             space: false, attack: false, melee2: false, special1: false, 
-            block: false, frontFlip: false
+            block: false
         };
         
         // Try to detect gamepad during gameplay using native API
@@ -1589,7 +1581,6 @@ class PlayScene extends Phaser.Scene {
                 if (leftStickY > deadzone) gamepadInput.down = true;
                 
                 // Button mappings (Xbox controller - new layout)
-                gamepadInput.frontFlip = pad.buttons[0].pressed; // A button - dodge (front flip)
                 gamepadInput.block = pad.buttons[1].pressed; // B button - block
                 gamepadInput.attack = pad.buttons[2].pressed; // X button - melee
                 gamepadInput.melee2 = pad.buttons[3].pressed; // Y button - melee2
@@ -1607,7 +1598,7 @@ class PlayScene extends Phaser.Scene {
         
         const currentAnim = this.hero.anims.currentAnim;
         const isBlocking = currentAnim && (currentAnim.key.startsWith('shield-block-start-') || currentAnim.key.startsWith('shield-block-mid-'));
-        const isActionInProgress = this.hero.isAttacking || (currentAnim && (currentAnim.key.startsWith('melee-') || currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('take-damage-') || currentAnim.key.startsWith('kick-') || currentAnim.key.startsWith('melee2-') || currentAnim.key.startsWith('special1-') || currentAnim.key.startsWith('front-flip-')) && this.hero.anims.isPlaying);
+        const isActionInProgress = this.hero.isAttacking || (currentAnim && (currentAnim.key.startsWith('melee-') || currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('take-damage-') || currentAnim.key.startsWith('kick-') || currentAnim.key.startsWith('melee2-') || currentAnim.key.startsWith('special1-')) && this.hero.anims.isPlaying);
 
         if (isBlocking) {
             this.hero.setVelocity(0, 0);
@@ -1619,7 +1610,7 @@ class PlayScene extends Phaser.Scene {
         }
 
         if (isActionInProgress) {
-            if (currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('front-flip-')) {
+            if (currentAnim.key.startsWith('rolling-')) {
                 const moveVelocity = new Phaser.Math.Vector2();
                 switch (this.facing) {
                     case 'n': moveVelocity.y = -1; break;
@@ -1631,7 +1622,7 @@ class PlayScene extends Phaser.Scene {
                     case 'sw': moveVelocity.set(-1, 1); break;
                     case 'se': moveVelocity.set(1, 1); break;
                 }
-                const speed = currentAnim.key.startsWith('rolling-') ? 8 : 6; // Matter physics scaling
+                const speed = 8; // Matter physics scaling for rolling
                 moveVelocity.normalize().scale(speed);
                 this.hero.setVelocity(moveVelocity.x, moveVelocity.y);
             } else {
@@ -1645,19 +1636,8 @@ class PlayScene extends Phaser.Scene {
             attack: gamepadInput.attack,
             melee2: gamepadInput.melee2,
             special1: gamepadInput.special1,
-            frontFlip: gamepadInput.frontFlip,
             block: gamepadInput.block
         } : {};
-
-        if (Phaser.Input.Keyboard.JustDown(f) || (gamepadInput.frontFlip && !this.lastGamepadState?.frontFlip)) {
-            // Check stamina for dodge
-            if (this.hero.stamina >= 30) {
-                this.hero.stamina -= 30;
-                this.hero.anims.play(`front-flip-${this.facing}`, true);
-                this.logEvt(this.hero, 'front_flip');
-            }
-            return;
-        }
 
         if (Phaser.Input.Keyboard.JustDown(b) || (gamepadInput.block && !this.lastGamepadState?.block)) {
             // Check if blocking is disabled due to stamina exhaustion
@@ -1788,13 +1768,12 @@ class PlayScene extends Phaser.Scene {
         
         // Store gamepad state for next frame comparison (native API)
         if (this.gamepad) {
-            this.lastGamepadState = {
-                attack: gamepadInput.attack,
-                melee2: gamepadInput.melee2,
-                special1: gamepadInput.special1,
-                frontFlip: gamepadInput.frontFlip,
-                block: gamepadInput.block
-            };
+                    this.lastGamepadState = {
+            attack: gamepadInput.attack,
+            melee2: gamepadInput.melee2,
+            special1: gamepadInput.special1,
+            block: gamepadInput.block
+        };
         }
 
         // Update player action debug info (safe version)
@@ -1944,8 +1923,6 @@ class PlayScene extends Phaser.Scene {
             currentAction = 'melee2';
         } else if (keys.C.isDown) {
             currentAction = 'special1';
-        } else if (keys.V.isDown) {
-            currentAction = 'front-flip';
         }
         
         // Determine movement based on actual key states
