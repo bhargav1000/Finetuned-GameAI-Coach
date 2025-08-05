@@ -1,4 +1,12 @@
-import { Q, α, γ, ε, key, chooseAction, updateQ, saveQ } from './RL.js';
+import { Agent } from './RL.js';
+
+// Define action sets for each character
+const KNIGHT_ACTIONS = ['attack', 'approach', 'lunge_left', 'lunge_right', 'block', 'idle'];
+const HERO_ACTIONS = [
+    'move_n', 'move_ne', 'move_e', 'move_se', 'move_s', 'move_sw', 'move_w', 'move_nw',
+    'attack_melee', 'attack_melee2', 'attack_special1',
+    'block', 'dodge'
+];
 
 class PlayScene extends Phaser.Scene {
     constructor() {
@@ -166,13 +174,22 @@ class PlayScene extends Phaser.Scene {
 
         directions.forEach((direction, index) => {
             const startFrame = index * framesPerRow;
+            const unsheathFrames = this.anims.generateFrameNumbers('unsheath', { start: startFrame, end: startFrame + 14 });
             this.anims.create({
                 key: `unsheath-${direction}`,
-                frames: this.anims.generateFrameNumbers('unsheath', { start: startFrame, end: startFrame + 14 }),
+                frames: unsheathFrames.slice().reverse(), // Play frames in reverse order
                 frameRate: 15,
                 repeat: 0
             });
         });
+
+        // --- RL Agents Setup ---
+        this.heroAgent = new Agent('hero', HERO_ACTIONS);
+        this.knightAgent = new Agent('knight', KNIGHT_ACTIONS);
+
+        // --- Speed up simulation ---
+        this.matter.world.engine.timing.timeScale = 4;
+        this.anims.globalTimeScale = 4;
 
         // --- Hero with Physics ---
         this.hero = this.matter.add.sprite(map.width/2, map.height/2, 'idle', 0);
@@ -222,25 +239,21 @@ class PlayScene extends Phaser.Scene {
 
         this.hero.on('animationcomplete', (animation) => {
             if (this.hero.isDead) { return; }
+            
+            // If the shield-block-start animation completes, check if the AI still wants to block.
             if (animation.key.startsWith('shield-block-start-')) {
-                if (this.keys.b.isDown) {
+                if (this.hero.isBlocking) { // Check the AI-controlled state flag
                     this.hero.anims.play(`shield-block-mid-${this.facing}`, true);
                 } else {
-                    this.hero.isBlocking = false;
                     this.hero.anims.play(`idle-${this.facing}`, true);
                 }
                 return;
             }
 
+            // For all other actions, simply return to idle and wait for the next AI decision.
             if (animation.key.startsWith('melee-') || animation.key.startsWith('rolling-') || animation.key.startsWith('take-damage-') || animation.key.startsWith('kick-') || animation.key.startsWith('melee2-') || animation.key.startsWith('special1-') || animation.key.startsWith('front-flip-')) {
-                // After an action, check if we should return to blocking or idle.
-                if (this.keys.b.isDown && !this.hero.blockDisabled) {
-                    this.hero.isBlocking = true;
-                    this.hero.anims.play(`shield-block-mid-${this.facing}`, true);
-                } else {
-                    this.hero.isBlocking = false; // Ensure blocking is off if key isn't pressed
+                this.hero.isBlocking = false; // Reset blocking state
                     this.hero.anims.play(`idle-${this.facing}`, true);
-                }
             }
         }, this);
 
@@ -276,8 +289,6 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.currentMovement = null;
         this.purpleKnight.movementDuration = 0;
         this.purpleKnight.isDead = false;
-        this.purpleKnight.rewardAccumulator = 0;     // track per-frame reward
-        this.lastRewardTick = 0;
         
         // Initialize stamina for knight
         this.purpleKnight.maxStamina = 100;
@@ -423,7 +434,7 @@ class PlayScene extends Phaser.Scene {
                 fontStyle: 'bold'
             }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setVisible(false);
 
-            this.restartText = this.add.text(this.game.config.width / 2, this.game.config.height / 2 + 20, 'Press Q to Restart', {
+            this.restartText = this.add.text(this.game.config.width / 2, this.game.config.height / 2 + 20, 'Game Over', {
                 fontSize: '24px',
                 fill: '#ffffff'
             }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setVisible(false);
@@ -450,17 +461,15 @@ class PlayScene extends Phaser.Scene {
             this.updateStaminaBar(); // Initial draw
         }
 
-        // --- Event Logging & WebSocket Bridge ---
-        this.socket = new WebSocket('ws://localhost:8765');
-        this.eventBuf = [];
+        // --- Event Logging Setup ---
+        // Note: Event buffering and WebSocket logic has been removed.
+        // Data is now sent via HTTP POST in the takeScreenshot function.
         this.aiLog = [];
         this.hitCount = 0;
         this.totalActions = 0;
         
         this.logEvt = (actor, action) => {
-            // Hero's facing direction is on the scene, knight's is on the object itself
             const directionStr = (actor === this.hero) ? this.facing : actor.facing;
-
             const event = {
                 t: this.time.now,
                 actor: actor.name,
@@ -469,28 +478,9 @@ class PlayScene extends Phaser.Scene {
                 hp: actor.health / actor.maxHealth,
                 action
             };
-            
-            this.eventBuf.push(event);
-            
-            // Display event in bottom panel
+            // The displayEvent function can still be used for local debug display
             this.displayEvent(event);
-            
-            if (this.eventBuf.length > 60) {
-                this.eventBuf.shift();
-            }
         };
-
-        // Flush event buffer every 150ms
-        this.time.addEvent({
-            delay: 150,
-            loop: true,
-            callback: () => {
-                if (this.socket.readyState === WebSocket.OPEN && this.eventBuf.length) {
-                    this.socket.send(JSON.stringify(this.eventBuf));
-                    this.eventBuf.length = 0;
-                }
-            }
-        });
 
         // --- Camera ---
         this.cameras.main.startFollow(this.hero);
@@ -541,9 +531,17 @@ class PlayScene extends Phaser.Scene {
 
     showGameOverScreen(didWin) {
         this.gameOverActive = true;
-        this.isDeathSequenceActive = false; // Allow Q to be pressed
-        this.gameOverText.setText(didWin ? 'YOU WIN' : 'YOU DIED').setVisible(true);
-        this.restartText.setVisible(true);
+        this.isDeathSequenceActive = false;
+
+        this.gameOverText.setText(didWin ? 'HERO WINS' : 'KNIGHT WINS').setVisible(true);
+        this.restartText.setText('Restarting...').setVisible(true);
+        
+        // After a short delay, save both Q-tables and restart
+        this.time.delayedCall(500, () => {
+            this.heroAgent.saveQ();
+            this.knightAgent.saveQ();
+            this.scene.restart();
+        });
     }
 
     updateKnightHealthBar() {
@@ -1027,14 +1025,6 @@ class PlayScene extends Phaser.Scene {
         // Apply the final calculated damage
         this.applyDamage(target, finalDamage);
 
-        if (wasKnight && finalDamage > 0) {          // knight hit hero
-            const next   = this.getKnightState(this.purpleKnight);
-            updateQ(this.purpleKnight.lastState,
-                    this.purpleKnight.lastAction,
-                    20,                              // positive reward
-                    next);
-        }
-
         // Play hit reaction and apply knockback
         if (finalDamage > 0 && !target.isDead) {
             this.playHitReaction(target);
@@ -1074,19 +1064,33 @@ class PlayScene extends Phaser.Scene {
     
 
     handleDeath(character) {
+        // Prevent multiple death sequences or running on an already dead character
+        if (this.isDeathSequenceActive || character.isDead) {
+            return;
+        }
+        this.isDeathSequenceActive = true;
+
         character.isDead = true;
         character.setVelocity(0, 0);
 
-        if (character === this.purpleKnight) {
-            this.hero.anims.play(`unsheath-${this.facing}`, true);
-            this.purpleKnight.anims.play('die', true);
-            this.showGameOverScreen(true); // Player wins
-        } else {
-            this.purpleKnight.anims.play(`unsheath-${this.purpleKnight.facing}`, true);
-            this.hero.anims.play('die', true);
-            this.showGameOverScreen(false); // Player loses
-        }
-        setTimeout(saveQ, 0);         // save once the episode ends
+        const victor = (character === this.hero) ? this.purpleKnight : this.hero;
+        const loser = character;
+        const didWin = (victor === this.hero);
+
+        // Determine the correct facing direction for the victor's animation
+        const victorFacing = (victor === this.hero) ? this.facing : victor.facing;
+
+        // Play animations
+        victor.anims.play(`unsheath-${victorFacing}`, true);
+        loser.anims.play('die', true);
+
+        // Show game over screen ONLY when the 'die' animation finishes
+        loser.once('animationcomplete', (animation) => {
+            // Ensure we only trigger this from the 'die' animation
+            if (animation.key === 'die') {
+                this.showGameOverScreen(didWin);
+            }
+        });
     }
 
 
@@ -1138,47 +1142,53 @@ class PlayScene extends Phaser.Scene {
     applyDamage = (target, damage) => {
         if (!target || target.isDead) return;
 
-
-
-
-        
-        // Store old health for animation
         const oldHealth = target.health;
-        target.health -= damage;
+        target.health = Math.max(0, target.health - damage);
         
-        // Ensure health doesn't go below 0
-        target.health = Math.max(0, target.health);
+        // --- REWARD/PENALTY LOGIC ---
+        const attacker = (target === this.hero) ? this.purpleKnight : this.hero;
+        const attackerAgent = (attacker === this.hero) ? this.heroAgent : this.knightAgent;
+        const targetAgent = (target === this.hero) ? this.heroAgent : this.knightAgent;
+        
+        // Define reward/penalty values
+        const HIT_REWARD = 20;
+        const DAMAGE_PENALTY = -20;
+        const WIN_REWARD = 100;
+        const LOSS_PENALTY = -100;
 
-        if (target === this.purpleKnight && damage > 0) {
-            const next = this.getKnightState(this.purpleKnight);
-            updateQ(this.purpleKnight.lastState,
-                    this.purpleKnight.lastAction,
-                    -20,                            // negative reward
-                    next);
-        }
+        // Get current states for updating Q-table
+        const attackerPrevState = (attacker === this.hero) ? this.heroAgent.lastState : this.knightAgent.lastState;
+        const targetPrevState = (target === this.hero) ? this.heroAgent.lastState : this.knightAgent.lastState;
         
-        // Log damage event
+        // Store last action taken by each agent, if not already stored
+        if (!attacker.lastAction) attacker.lastAction = attackerAgent.actions[0];
+        if (!target.lastAction) target.lastAction = targetAgent.actions[0];
+        
+        // Reward attacker, penalize target
+        if (damage > 0) {
+            if (attackerPrevState) {
+                attackerAgent.updateQ(attackerPrevState, attacker.lastAction, HIT_REWARD, this.getAgentState(attacker, true));
+            }
+            if (targetPrevState) {
+                targetAgent.updateQ(targetPrevState, target.lastAction, DAMAGE_PENALTY, this.getAgentState(target, true));
+            }
+        }
+
         this.logEvt(target, `took_damage_${damage.toFixed(1)}`);
         
-        // Add visual feedback for damage taken - FORCE update health bars
         if (target === this.hero) {
-
             this.animateHealthBarDamage(target, oldHealth);
-            this.updateHealthBar();
         } else if (target === this.purpleKnight) {
-
             this.animateKnightHealthBarDamage(target, oldHealth);
-            this.updateKnightHealthBar();
         }
 
-        // Death check
         if (target.health <= 0 && !target.isDead) {
-            if (target === this.purpleKnight) {      // knight DIED  (-100)
-                const next = {distBin:'dead',playerDir:'x'};
-                updateQ(this.purpleKnight.lastState,
-                        this.purpleKnight.lastAction,
-                        -100,
-                        next);
+            // Penalize the loser, reward the winner
+            if (targetPrevState) {
+                targetAgent.updateQ(targetPrevState, target.lastAction, LOSS_PENALTY, { state: 'dead' });
+            }
+            if (attackerPrevState) {
+                attackerAgent.updateQ(attackerPrevState, attacker.lastAction, WIN_REWARD, this.getAgentState(attacker, true));
             }
             this.handleDeath(target);
         } else if (!target.isDead) {
@@ -1190,6 +1200,16 @@ class PlayScene extends Phaser.Scene {
             });
         }
     };
+    
+    // Helper to get state for the correct agent
+    getAgentState(character, isNext = false) {
+        // For the next state, we always calculate fresh
+        if (isNext) {
+            return (character === this.hero) ? this.getHeroState() : this.getKnightState();
+        }
+        // For the previous state, we retrieve what we stored
+        return (character === this.hero) ? this.hero.lastState : this.purpleKnight.lastState;
+    }
 
     applyKnockback = (target, attacker, attackType) => {
         // Special knockback for special attack on knight
@@ -1259,549 +1279,225 @@ class PlayScene extends Phaser.Scene {
         });
     };
 
-    getKnightState(knight) {
-        // Calculate distance to player and bin it
-        const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        let distBin;
-        if (distanceToPlayer < 60) distBin = 'close';
-        else if (distanceToPlayer < 120) distBin = 'medium';
-        else distBin = 'far';
+    // =================================================================
+    //  STATE AND ACTION FUNCTIONS FOR RL AGENTS
+    // =================================================================
+
+    getHeroState() {
+        const knight = this.purpleKnight;
+        const distance = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, knight.x, knight.y);
         
-        // Get player direction relative to knight
-        const angle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        const playerDir = this.getDirectionFromAngle(angle);
-        
-        return { distBin, playerDir };
+        // Discretize state variables
+        const distBin = distance < 80 ? 'close' : (distance < 200 ? 'medium' : 'far');
+        const knightHpBin = knight.health / knight.maxHealth > 0.6 ? 'high' : (knight.health / knight.maxHealth > 0.3 ? 'mid' : 'low');
+        const heroHpBin = this.hero.health / this.hero.maxHealth > 0.6 ? 'high' : (this.hero.health / this.hero.maxHealth > 0.3 ? 'mid' : 'low');
+        const knightAction = knight.isAttacking ? 'attacking' : (knight.isBlocking ? 'blocking' : 'idle');
+
+        return { distBin, knightHpBin, heroHpBin, knightAction };
     }
 
-    executeKnightAction(knight, ctx) {
+    getKnightState() {
+        const hero = this.hero;
+        const distance = Phaser.Math.Distance.Between(this.purpleKnight.x, this.purpleKnight.y, hero.x, hero.y);
+
+        const distBin = distance < 80 ? 'close' : (distance < 200 ? 'medium' : 'far');
+        const heroAction = hero.isAttacking ? 'attacking' : (hero.isBlocking ? 'blocking' : 'idle');
+        const angleToHero = Phaser.Math.Angle.Between(this.purpleKnight.x, this.purpleKnight.y, hero.x, hero.y);
+        const relativeDir = this.getDirectionFromAngle(angleToHero);
+
+        return { distBin, heroAction, relativeDir };
+    }
+
+    executeHeroAction(action) {
+        if (this.hero.isDead || this.isActionInProgress(this.hero)) {
+            return;
+        }
+
+        const movePrefix = 'move_';
+        if (action.startsWith(movePrefix)) {
+            const direction = action.substring(movePrefix.length);
+            this.facing = direction;
+            const velocity = new Phaser.Math.Vector2();
+            
+            if (direction.includes('n')) velocity.y = -1;
+            if (direction.includes('s')) velocity.y = 1;
+            if (direction.includes('w')) velocity.x = -1;
+            if (direction.includes('e')) velocity.x = 1;
+            
+            velocity.normalize().scale(3); // Walk speed
+            this.hero.setVelocity(velocity.x, velocity.y);
+            this.hero.anims.play(`walk-${this.facing}`, true);
+            return;
+        }
+
+        const attackPrefix = 'attack_';
+        if (action.startsWith(attackPrefix)) {
+            const attackType = action.substring(attackPrefix.length);
+            this.performAttack(this.hero, attackType);
+            return;
+        }
+        
+        switch (action) {
+            case 'block':
+                if (!this.hero.blockDisabled) {
+                    this.hero.isBlocking = true;
+                    this.hero.anims.play(`shield-block-start-${this.facing}`, true);
+                }
+                break;
+            case 'dodge':
+                if (this.hero.stamina >= 30) {
+                    this.hero.stamina -= 30;
+                    this.hero.anims.play(`rolling-${this.facing}`, true);
+                }
+                break;
+        }
+    }
+    
+    executeKnightAction(action) {
+        const knight = this.purpleKnight;
+        if (knight.isDead || this.isActionInProgress(knight)) {
+            return;
+        }
+
         const angle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
         const direction = this.getDirectionFromAngle(angle);
         knight.facing = direction;
         
         const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        const lungeSpeed = 3;
-        
-        knight.lastState  = this.getKnightState(knight);
-        knight.lastAction = ctx.action;
 
-        switch(ctx.action) {
+        switch(action) {
             case 'attack':
-                if (distanceToPlayer < 100) { // Only attack if close enough
-                    // Check if knight has enough stamina for attack
-                    if (knight.stamina >= 15) {
-                        this.performAttack(knight, 'melee');
-                        return 'SUCCESS';
-                    } else {
-                
-                        return 'FAILURE';
-                    }
+                if (distanceToPlayer < 100 && knight.stamina >= 15) {
+                    this.performAttack(knight, 'melee');
                 }
-                return 'FAILURE';
-                
+                break;
             case 'approach':
-                if (distanceToPlayer > 60 && !knight.movementDisabled) {
-                    // Check stamina for approach (minimal cost)
-                    if (knight.stamina >= 5) {
-                        // Check if movement would cause collision with player
-                        const moveDistance = 2 * 8; // speed * frames (rough estimate)
-                        if (distanceToPlayer > moveDistance + 40) { // 40px buffer to prevent overlap
-                    
-                            knight.stamina -= 5;
-                            knight.staminaRegenDelay = 250; // 0.25s delay for light movement
-                            knight.currentMovement = 'approach';
-                            knight.movementDuration = 500; // Move for 500ms
-                            knight.movementAngle = angle; // Store direction to player
-                            knight.movementDirection = direction;
-                            return 'SUCCESS';
-                        } else {
-
-                            return 'FAILURE';
-                        }
-                    } else {
-
-                        return 'FAILURE';
-                    }
-                } else if (knight.movementDisabled) {
-
-                    return 'FAILURE';
-                } else {
-
-                    knight.setVelocity(0, 0);
-                    knight.anims.play(`idle-${direction}`, true);
-                    return 'SUCCESS';
+                if (distanceToPlayer > 60 && knight.stamina >= 5) {
+                    knight.stamina -= 5;
+                    knight.currentMovement = 'approach';
+                    knight.movementDuration = 500;
+                    knight.movementAngle = angle;
+                    knight.movementDirection = direction;
                 }
-                
+                break;
             case 'lunge_left':
-                // Check stamina and movement disability for lunge (higher cost)
-                if (knight.stamina >= 20 && !knight.movementDisabled) {
+                 if (knight.stamina >= 20) {
                     knight.stamina -= 20;
-                    knight.staminaRegenDelay = 400; // 0.4s delay for a lunge
                     knight.currentMovement = 'lunge_left';
-                    knight.movementDuration = 300; // Lunge for 300ms
-                    knight.movementAngle = angle - Math.PI/2; // Store left angle
-                    knight.movementDirection = direction; // Face towards player
-                    return 'SUCCESS';
-                } else if (knight.movementDisabled) {
-                    return 'FAILURE';
-                } else {
-
-                    return 'FAILURE';
+                    knight.movementDuration = 300;
+                    knight.movementAngle = angle - Math.PI / 2;
+                    knight.movementDirection = direction;
                 }
-                
+                break;
             case 'lunge_right':
-                // Check stamina and movement disability for lunge (higher cost)
-                if (knight.stamina >= 20 && !knight.movementDisabled) {
+                if (knight.stamina >= 20) {
                     knight.stamina -= 20;
-                    knight.staminaRegenDelay = 400; // 0.4s delay for a lunge
                     knight.currentMovement = 'lunge_right';
-                    knight.movementDuration = 300; // Lunge for 300ms
-                    knight.movementAngle = angle + Math.PI/2; // Store right angle
-                    knight.movementDirection = direction; // Face towards player
-                    return 'SUCCESS';
-                } else if (knight.movementDisabled) {
-                    return 'FAILURE';
-                } else {
-
-                    return 'FAILURE';
+                    knight.movementDuration = 300;
+                    knight.movementAngle = angle + Math.PI / 2;
+                    knight.movementDirection = direction;
                 }
-                
-            default:
+                break;
+            case 'block':
+                if (!knight.blockDisabled) {
+                    knight.isBlocking = true;
+                    knight.anims.play(`shield-block-start-${direction}`, true);
+                }
+                break;
+            case 'idle':
                 knight.setVelocity(0, 0);
                 knight.anims.play(`idle-${direction}`, true);
-                return 'SUCCESS';
+                break;
         }
     }
 
-    update(time, delta) {
-        
+    isActionInProgress(character) {
+        const anim = character.anims.currentAnim;
+        if (!anim) return false;
 
-        if (time - this.lastScreenshotTime > this.screenshotInterval) {
+        const isMoving = character.body.velocity.x !== 0 || character.body.velocity.y !== 0;
+        const isStandardAction = anim.key.startsWith('melee-') || anim.key.startsWith('rolling-') || anim.key.startsWith('take-damage-') || anim.key.startsWith('kick-') || anim.key.startsWith('melee2-') || anim.key.startsWith('special1-') || anim.key.startsWith('front-flip-');
+        const isBlocking = anim.key.startsWith('shield-block-');
+
+        return character.isAttacking || (character.anims.isPlaying && (isStandardAction || isBlocking)) || isMoving;
+    }
+
+    update(time, delta) {
+        if (this.gameOverActive) {
+            return; // Automatic restart is handled by showGameOverScreen
+        }
+
+        // --- Data Collection ---
+        if (time - (this.lastScreenshotTime || 0) > this.screenshotInterval) {
             this.takeScreenshot();
             this.lastScreenshotTime = time;
         }
 
-        if (this.gameOverActive) {
-            if (Phaser.Input.Keyboard.JustDown(this.keys.q)) {
-                saveQ();                // persist learning before restart
-                this.scene.restart();
-            }
-            return; // Lock all other updates
-        }
-
-        if (this.isDeathSequenceActive) {
-            this.hero.setVelocity(0, 0);
-            this.purpleKnight.setVelocity(0, 0);
-            return;
-        }
-
-        // 3.  Small time-penalty every 1000 ms so knight doesn’t idle
-        if (time - this.lastRewardTick > 1000) {
-            this.lastRewardTick = time;
-            if (this.purpleKnight.lastState && this.purpleKnight.lastAction) {
-                const next = this.getKnightState(this.purpleKnight);
-                updateQ(this.purpleKnight.lastState,
-                        this.purpleKnight.lastAction,
-                        -1,   // tiny cost for standing around
-                        next);
-            }
-        }
-
-        // Handle stamina updates for both characters every frame
+        // --- Core Game Loop ---
         this.updateStamina(delta);
 
-        // --- Purple Knight AI with Q-Learning ---
+        // --- AI Decision Making ---
+        this.hero.actionCooldown = (this.hero.actionCooldown || 0) - delta;
+        this.purpleKnight.actionCooldown = (this.purpleKnight.actionCooldown || 0) - delta;
+        
+        // Hero AI Tick
+        if (this.hero.actionCooldown <= 0) {
+            const heroState = this.getHeroState();
+            this.hero.lastState = heroState; // Store state
+            const heroAction = this.heroAgent.chooseAction(heroState);
+            this.hero.lastAction = heroAction; // Store action
+            this.executeHeroAction(heroAction);
+            this.hero.actionCooldown = 100; // Faster decisions
+        }
+
+        // Knight AI Tick
+        if (this.purpleKnight.actionCooldown <= 0) {
+            const knightState = this.getKnightState();
+            this.purpleKnight.lastState = knightState; // Store state
+            const knightAction = this.knightAgent.chooseAction(knightState);
+            this.purpleKnight.lastAction = knightAction; // Store action
+            this.executeKnightAction(knightAction);
+            this.purpleKnight.actionCooldown = 100; // Faster decisions
+        }
+
+                // --- Handle Knight's Ongoing Movement ---
         const knight = this.purpleKnight;
-        if (knight.active) {
-            if (knight.isDead) {
-                return;
-            }
-            
-            const knightAnim = knight.anims.currentAnim;
-            const isKnightInAction = (knightAnim && (knightAnim.key.startsWith('take-damage-') || knightAnim.key.startsWith('shield-block-'))) || knight.isTakingDamage || knight.isAttacking || knight.isRecovering;
-
-            // Update action cooldown
-            if (knight.actionCooldown > 0) {
-                knight.actionCooldown -= delta;
-            }
-            
-            // Update movement duration and handle ongoing movement
-            if (knight.currentMovement && knight.movementDuration > 0) {
-                knight.movementDuration -= delta;
-                
-                // Use stored movement direction and angle (don't recalculate)
-                if (knight.currentMovement === 'approach') {
-                    // Check distance to player to prevent overshooting
-                    const currentDistance = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-                    
-                    if (currentDistance > 70) { // Safe distance to continue moving
-                        const knightSpeed = Math.min(2, (currentDistance - 60) / 10); // Slow down as getting closer
-                        const moveVector = new Phaser.Math.Vector2(
-                            Math.cos(knight.movementAngle) * knightSpeed,
-                            Math.sin(knight.movementAngle) * knightSpeed
-                        );
-                        knight.setStatic(false); // Allow movement temporarily
-                        knight.body.collisionFilter.mask = 0x0004; // Only collide with walls, not hero
-                        knight.setVelocity(moveVector.x, moveVector.y);
-                        knight.anims.play(`walk-${knight.movementDirection}`, true);
-                    } else {
-                        knight.movementDuration = 0; // Force stop
-                    }
-                } else if (knight.currentMovement === 'lunge_left') {
-                    const lungeSpeed = 4;
-                    const leftVector = new Phaser.Math.Vector2(
-                        Math.cos(knight.movementAngle) * lungeSpeed,
-                        Math.sin(knight.movementAngle) * lungeSpeed
-                    );
-                    knight.setStatic(false);
-                    knight.body.collisionFilter.mask = 0x0004;
-                    knight.setVelocity(leftVector.x, leftVector.y);
-                    if (!knight.anims.isPlaying || !knight.anims.currentAnim.key.startsWith('rolling-')) {
-                        knight.anims.play(`rolling-${knight.movementDirection}`, true);
-                    }
-                } else if (knight.currentMovement === 'lunge_right') {
-                    const lungeSpeed = 4;
-                    const rightVector = new Phaser.Math.Vector2(
-                        Math.cos(knight.movementAngle) * lungeSpeed,
-                        Math.sin(knight.movementAngle) * lungeSpeed
-                    );
-                    knight.setStatic(false);
-                    knight.body.collisionFilter.mask = 0x0004;
-                    knight.setVelocity(rightVector.x, rightVector.y);
-                    if (!knight.anims.isPlaying || !knight.anims.currentAnim.key.startsWith('rolling-')) {
-                        knight.anims.play(`rolling-${knight.movementDirection}`, true);
-                    }
-                }
-                
-                if (knight.movementDuration <= 0) {
-                    knight.currentMovement = null;
-                    knight.setVelocity(0, 0);
-                    knight.setStatic(true);
-                    knight.body.collisionFilter.mask = 0x0005;
-                    const currentAngle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-                    const currentDirection = this.getDirectionFromAngle(currentAngle);
-                    knight.facing = currentDirection;
-                    knight.anims.play(`idle-${currentDirection}`, true);
-                }
+        if (knight.currentMovement && knight.movementDuration > 0) {
+            knight.movementDuration -= delta;
+            // (Movement execution logic remains the same)
+            if (knight.currentMovement === 'approach') {
+                const knightSpeed = 2;
+                const moveVector = new Phaser.Math.Vector2(Math.cos(knight.movementAngle), Math.sin(knight.movementAngle)).scale(knightSpeed);
+                knight.setStatic(false);
+                knight.setVelocity(moveVector.x, moveVector.y);
+                knight.anims.play(`walk-${knight.movementDirection}`, true);
+            } else if (knight.currentMovement.startsWith('lunge')) {
+                const lungeSpeed = 4;
+                const moveVector = new Phaser.Math.Vector2(Math.cos(knight.movementAngle), Math.sin(knight.movementAngle)).scale(lungeSpeed);
+                knight.setStatic(false);
+                knight.setVelocity(moveVector.x, moveVector.y);
+                knight.anims.play(`rolling-${knight.movementDirection}`, true);
             }
 
-            if (!isKnightInAction && knight.actionCooldown <= 0 && !knight.currentMovement && knight.staminaRegenDelay <= 0) {
-                const prevState = this.getKnightState(knight);
-                const prevAction = chooseAction(prevState);
-                const ctx = { action: prevAction };
-                
-                this.executeKnightAction(knight, ctx);
-                this.logEvt(knight, prevAction);
-                
-                if (prevAction === 'attack') {
-                    knight.actionCooldown = 800;
-                } else {
-                    knight.actionCooldown = 200;
-                }
-            }
-        }
-
-        if (this.redBoundaries && this.redBoundaries.visible) {
-            this.redBoundaries.clear();
-            this.redBoundaries.lineStyle(2, 0xff0000, 0.8);
-            this.boundaryRects.forEach(r => {
-                this.redBoundaries.strokeRect(r.x, r.y, r.w, r.h);
-            });
-            // Draw knight collision circle
-            this.redBoundaries.strokeCircle(this.purpleKnight.x, this.purpleKnight.y, 42);
-            // Draw hero collision circle  
-            this.redBoundaries.strokeCircle(this.hero.x, this.hero.y, 42);
-        }
-        if (this.blueBoundaries && this.blueBoundaries.visible) {
-            this.blueBoundaries.clear();
-            this.blueBoundaries.lineStyle(2, 0x0000ff, 0.8);
-            const heroCenterX = this.hero.x;
-            const heroCenterY = this.hero.y;
-            const heroRadius = 42;
-            this.blueBoundaries.strokeCircle(heroCenterX, heroCenterY, heroRadius);
-            for (let i = 0; i < 8; i++) {
-                const angle = i * 45;
-                const rad = Phaser.Math.DegToRad(angle);
-                const endX = heroCenterX + heroRadius * Math.cos(rad);
-                const endY = heroCenterY + heroRadius * Math.sin(rad);
-                this.blueBoundaries.beginPath();
-                this.blueBoundaries.moveTo(heroCenterX, heroCenterY);
-                this.blueBoundaries.lineTo(endX, endY);
-                this.blueBoundaries.strokePath();
-            }
-        }
-        if (this.greenBoundaries && this.greenBoundaries.visible) {
-            this.greenBoundaries.clear();
-            this.greenBoundaries.lineStyle(2, 0x00ff00, 0.8);
-            const knightCenterX = this.purpleKnight.x;
-            const knightCenterY = this.purpleKnight.y;
-            const knightRadius = 42;
-            this.greenBoundaries.strokeCircle(knightCenterX, knightCenterY, knightRadius);
-            for (let i = 0; i < 8; i++) {
-                const angle = i * 45;
-                const rad = Phaser.Math.DegToRad(angle);
-                const endX = knightCenterX + knightRadius * Math.cos(rad);
-                const endY = knightCenterY + knightRadius * Math.sin(rad);
-                this.greenBoundaries.beginPath();
-                this.greenBoundaries.moveTo(knightCenterX, knightCenterY);
-                this.greenBoundaries.lineTo(endX, endY);
-                this.greenBoundaries.strokePath();
-            }
-        }
-
-        // --- Hero Input & Movement ---
-        const { left, right, up, down, space, m, r, k, n, s, b, f, c } = this.keys;
-        
-        // Xbox controller input
-        let gamepadInput = {
-            left: false, right: false, up: false, down: false,
-            space: false, attack: false, melee2: false, special1: false, 
-            block: false, frontFlip: false
-        };
-        
-        // Try to detect gamepad during gameplay using native API
-        if (!this.gamepad && navigator.getGamepads) {
-            const gamepads = navigator.getGamepads();
-            for (let i = 0; i < gamepads.length; i++) {
-                if (gamepads[i] && gamepads[i].connected) {
-                    this.gamepad = gamepads[i];
-                    this.logEvt(this.hero, 'controller_detected_runtime');
-                    break;
-                }
+            if (knight.movementDuration <= 0) {
+                knight.currentMovement = null;
+                knight.setVelocity(0, 0);
+                knight.setStatic(true);
             }
         }
         
-        // Use native gamepad API for input
-        if (this.gamepad && this.gamepad.connected) {
-            // Get fresh gamepad state (required for native API)
-            const freshGamepads = navigator.getGamepads();
-            const pad = freshGamepads[this.gamepad.index];
-            
-            if (pad) {
-                // Left stick for movement (axes 0 and 1)
-                const leftStickX = pad.axes[0];
-                const leftStickY = pad.axes[1];
-                const deadzone = 0.3;
-                
-                if (leftStickX < -deadzone) gamepadInput.left = true;
-                if (leftStickX > deadzone) gamepadInput.right = true;
-                if (leftStickY < -deadzone) gamepadInput.up = true;
-                if (leftStickY > deadzone) gamepadInput.down = true;
-                
-                // Button mappings (Xbox controller - new layout)
-                gamepadInput.frontFlip = pad.buttons[0].pressed; // A button - dodge (front flip)
-                gamepadInput.block = pad.buttons[1].pressed; // B button - block
-                gamepadInput.attack = pad.buttons[2].pressed; // X button - melee
-                gamepadInput.melee2 = pad.buttons[3].pressed; // Y button - melee2
-                gamepadInput.special1 = pad.buttons[7].pressed; // RT - special1
-                gamepadInput.space = pad.buttons[4].pressed; // LB (Left Shoulder) - run
-                
-
-            }
+        // --- Knight Tracking ---
+        // Make the knight always face the hero if not in the middle of an action.
+        if (!this.isActionInProgress(knight)) {
+            const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+            const direction = this.getDirectionFromAngle(angleToHero);
+            knight.facing = direction;
+            knight.anims.play(`idle-${direction}`, true);
         }
-
-        if (this.hero.isAttacking) {
-            this.hero.setVelocity(0, 0); // Ensure no movement during attack
-            return;
-        }
-        
-        const currentAnim = this.hero.anims.currentAnim;
-        const isBlocking = currentAnim && (currentAnim.key.startsWith('shield-block-start-') || currentAnim.key.startsWith('shield-block-mid-'));
-        const isActionInProgress = this.hero.isAttacking || (currentAnim && (currentAnim.key.startsWith('melee-') || currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('take-damage-') || currentAnim.key.startsWith('kick-') || currentAnim.key.startsWith('melee2-') || currentAnim.key.startsWith('special1-') || currentAnim.key.startsWith('front-flip-')) && this.hero.anims.isPlaying);
-
-        if (isBlocking) {
-            this.hero.setVelocity(0, 0);
-            if (b.isUp && !gamepadInput.block) {
-                this.hero.isBlocking = false;
-                this.hero.anims.play(`idle-${this.facing}`, true);
-            }
-            return;
-        }
-
-        if (isActionInProgress) {
-            if (currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('front-flip-')) {
-                const moveVelocity = new Phaser.Math.Vector2();
-                switch (this.facing) {
-                    case 'n': moveVelocity.y = -1; break;
-                    case 's': moveVelocity.y = 1; break;
-                    case 'w': moveVelocity.x = -1; break;
-                    case 'e': moveVelocity.x = 1; break;
-                    case 'nw': moveVelocity.set(-1, -1); break;
-                    case 'ne': moveVelocity.set(1, -1); break;
-                    case 'sw': moveVelocity.set(-1, 1); break;
-                    case 'se': moveVelocity.set(1, 1); break;
-                }
-                const speed = currentAnim.key.startsWith('rolling-') ? 8 : 6; // Matter physics scaling
-                moveVelocity.normalize().scale(speed);
-                this.hero.setVelocity(moveVelocity.x, moveVelocity.y);
-            } else {
-                this.hero.setVelocity(0, 0);
-            }
-            return;
-        }
-
-        // Handle actions (keyboard + gamepad with native API)
-        const currentGamepadState = this.gamepad ? {
-            attack: gamepadInput.attack,
-            melee2: gamepadInput.melee2,
-            special1: gamepadInput.special1,
-            frontFlip: gamepadInput.frontFlip,
-            block: gamepadInput.block
-        } : {};
-
-        if (Phaser.Input.Keyboard.JustDown(f) || (gamepadInput.frontFlip && !this.lastGamepadState?.frontFlip)) {
-            // Check stamina for dodge
-            if (this.hero.stamina >= 30) {
-                this.hero.stamina -= 30;
-                this.hero.anims.play(`front-flip-${this.facing}`, true);
-                this.logEvt(this.hero, 'front_flip');
-            }
-            return;
-        }
-
-        if (Phaser.Input.Keyboard.JustDown(b) || (gamepadInput.block && !this.lastGamepadState?.block)) {
-            // Check if blocking is disabled due to stamina exhaustion
-            if (this.hero.blockDisabled) {
-                return;
-            }
-            this.hero.setVelocity(0, 0);
-            this.hero.isBlocking = true;
-            this.hero.anims.play(`shield-block-start-${this.facing}`, true);
-            this.logEvt(this.hero, 'block');
-            return;
-        }
-        
-        if (Phaser.Input.Keyboard.JustDown(m) || (gamepadInput.attack && !this.lastGamepadState?.attack)) {
-            this.performAttack(this.hero, 'melee');
-            return;
-        }
-
-        if (Phaser.Input.Keyboard.JustDown(n) || (gamepadInput.melee2 && !this.lastGamepadState?.melee2)) {
-            this.performAttack(this.hero, 'melee2');
-            return;
-        }
-
-        if (Phaser.Input.Keyboard.JustDown(c) || (gamepadInput.special1 && !this.lastGamepadState?.special1)) {
-            this.performAttack(this.hero, 'special1');
-            return;
-        }
-
-
-        const velocity = new Phaser.Math.Vector2();
-
-        // --- Determine direction from key presses ---
-        let direction = this.facing;
-        // Consider both keyboard and gamepad for direction
-        const upPressed = up.isDown || gamepadInput.up;
-        const downPressed = down.isDown || gamepadInput.down;
-        const leftPressed = left.isDown || gamepadInput.left;
-        const rightPressed = right.isDown || gamepadInput.right;
-        
-        if (upPressed) {
-            if (leftPressed) direction = 'nw';
-            else if (rightPressed) direction = 'ne';
-            else direction = 'n';
-        } else if (downPressed) {
-            if (leftPressed) direction = 'sw';
-            else if (rightPressed) direction = 'se';
-            else direction = 's';
-        } else if (leftPressed) {
-            direction = 'w';
-        } else if (rightPressed) {
-            direction = 'e';
-        }
-
-        // --- Set velocity based on keys pressed or gamepad ---
-        if (leftPressed) velocity.x = -1;
-        else if (rightPressed) velocity.x = 1;
-        if (upPressed) velocity.y = -1;
-        else if (downPressed) velocity.y = 1;
-        
-        // --- Play animations and log movement ---
-        if (velocity.length() > 0) {
-            this.facing = direction;
-
-            const isRunning = space.isDown || gamepadInput.space;
-            const currentSpeed = isRunning ? 5 : 3; // Matter physics scaling
-            velocity.normalize().scale(currentSpeed);
-            const animPrefix = isRunning ? 'run' : 'walk';
-            
-            // Running stamina cost
-            if (isRunning) {
-                if (this.hero.stamina > 0) {
-                    this.hero.stamina -= 0.5; // Drain stamina while running
-                } else {
-                    // Force walking if no stamina
-                    const currentSpeed = 3;
-                    velocity.normalize().scale(currentSpeed);
-                    const animPrefix = 'walk';
-                }
-            }
-            
-            this.hero.anims.play(`${animPrefix}-${this.facing}`, true);
-            
-            // Log movement (throttled to avoid spam)
-            if (!this.lastMoveLog || this.time.now - this.lastMoveLog > 500) {
-                this.logEvt(this.hero, isRunning ? 'running' : 'walking');
-                this.lastMoveLog = this.time.now;
-            }
-        } else {
-            this.hero.anims.play(`idle-${this.facing}`, true);
-        }
-
-        this.hero.setVelocity(velocity.x, velocity.y);
         
         // Ensure no visual rotation
         this.hero.setRotation(0);
         this.purpleKnight.setRotation(0);
-        
-        // Update external debug panel with latest AI metrics
-        const last = this.aiLog[this.aiLog.length-1]||{};
-        if (last.state) {
-            document.getElementById('debug-state').textContent = `${last.state.distBin}-${last.state.playerDir}`;
-            document.getElementById('debug-action').textContent = last.action || '-';
-            document.getElementById('debug-cooldown').textContent = `${Math.round(this.purpleKnight.actionCooldown)}ms`;
-            
-            if (last.q) {
-                document.getElementById('debug-q-attack').textContent = last.q.attack?.toFixed(2) || '0';
-                document.getElementById('debug-q-approach').textContent = last.q.approach?.toFixed(2) || '0';
-                document.getElementById('debug-q-lunge-left').textContent = last.q.lunge_left?.toFixed(2) || '0';
-                document.getElementById('debug-q-lunge-right').textContent = last.q.lunge_right?.toFixed(2) || '0';
-            }
-            
-            document.getElementById('debug-total-states').textContent = Object.keys(Q).length;
-            const hitRate = this.totalActions > 0 ? ((this.hitCount / this.totalActions) * 100).toFixed(1) : '0';
-            document.getElementById('debug-hit-rate').textContent = `${hitRate}%`;
-            
-            // Update Q-value bar chart in HTML
-            const row = Q[key(last.state)] || {attack:0,approach:0, lunge_left:0,lunge_right:0};
-            const maxWidth = 200;
-            const minWidth = 10;
-            document.getElementById('q-bar-attack').style.width = Math.max(minWidth, Math.min(maxWidth, row.attack * 20 + 10)) + 'px';
-            document.getElementById('q-bar-approach').style.width = Math.max(minWidth, Math.min(maxWidth, row.approach * 20 + 10)) + 'px';
-            document.getElementById('q-bar-lunge-left').style.width = Math.max(minWidth, Math.min(maxWidth, row.lunge_left * 20 + 10)) + 'px';
-            document.getElementById('q-bar-lunge-right').style.width = Math.max(minWidth, Math.min(maxWidth, row.lunge_right * 20 + 10)) + 'px';
-        }
-        
-        // Stamina regeneration
-        this.updateStamina(delta);
-        
-        // Store gamepad state for next frame comparison (native API)
-        if (this.gamepad) {
-            this.lastGamepadState = {
-                attack: gamepadInput.attack,
-                melee2: gamepadInput.melee2,
-                special1: gamepadInput.special1,
-                frontFlip: gamepadInput.frontFlip,
-                block: gamepadInput.block
-            };
-        }
-
-        // Update player action debug info (safe version)
-        try {
-            this.updatePlayerDebugInfo();
-        } catch (e) {
-        }
     }
 
     updateStamina(delta) {
@@ -1973,39 +1669,65 @@ class PlayScene extends Phaser.Scene {
 
 
     takeScreenshot() {
+        // Exit if the game is over
+        if (this.gameOverActive) {
+            return;
+        }
+
         const mainCanvas = this.game.canvas;
         const screenshotCanvas = document.getElementById('screenshot-canvas');
 
         if (!screenshotCanvas) {
-    
             return;
         }
 
+        // 1. Capture screenshot
         screenshotCanvas.width = mainCanvas.width;
         screenshotCanvas.height = mainCanvas.height;
-
         const context = screenshotCanvas.getContext('2d');
         context.drawImage(mainCanvas, 0, 0, mainCanvas.width, mainCanvas.height);
-
         const imageData = screenshotCanvas.toDataURL('image/png');
-        const metadata = {
-            player: {
+
+        // 2a. Create event snapshot for the Hero
+        const heroState = {
+            t: this.time.now,
+            actor: this.hero.label,
+            pos: [this.hero.x, this.hero.y],
+            dir: this.directionMap.get(this.facing),
                 hp: this.hero.health / this.hero.maxHealth,
-                animation: this.hero.anims.currentAnim ? this.hero.anims.currentAnim.key : 'none'
-            },
-            enemy: {
-                hp: this.purpleKnight.health / this.purpleKnight.maxHealth,
-                animation: this.purpleKnight.anims.currentAnim ? this.purpleKnight.anims.currentAnim.key : 'none'
-            }
+            stamina: this.hero.stamina / this.hero.maxStamina,
+            action: (this.hero.anims.currentAnim ? this.hero.anims.currentAnim.key : 'idle')
         };
 
-        if (this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: 'screenshot',
+        // 2b. Create event snapshot for the Purple Knight
+        const knightState = {
+            t: this.time.now,
+            actor: this.purpleKnight.label,
+            pos: [this.purpleKnight.x, this.purpleKnight.y],
+            dir: this.directionMap.get(this.purpleKnight.facing),
+                hp: this.purpleKnight.health / this.purpleKnight.maxHealth,
+            stamina: this.purpleKnight.stamina / this.purpleKnight.maxStamina,
+            action: (this.purpleKnight.anims.currentAnim ? this.purpleKnight.anims.currentAnim.key : 'idle')
+        };
+
+        // 3. Package everything into a single payload
+        const payload = {
+            type: 'game_state_snapshot',
                 image: imageData,
-                metadata: metadata
-            }));
-        }
+            hero_state: heroState,
+            knight_state: knightState
+        };
+
+        // 4. Send the payload to the backend API via HTTP POST
+        fetch('http://localhost:8765/game_state_snapshot', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        }).catch(error => {
+            console.error('Failed to send game state snapshot:', error);
+        });
     }
 }
 

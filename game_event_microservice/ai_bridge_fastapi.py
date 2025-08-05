@@ -8,12 +8,23 @@ from datetime import datetime
 from typing import List, Dict, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 import uvicorn
 
 # Initialize FastAPI app
 app = FastAPI(title="AI Bridge API", description="Game AI Bridge with ChromaDB and Screenshot Storage")
+
+# Add CORS middleware to allow all origins
+# This is necessary to allow the browser-based game client to connect to the WebSocket server.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Initialize components
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -31,19 +42,21 @@ if not os.path.exists(SESSION_FOLDER):
 
 screenshot_counter = 0
 
-# Pydantic models
-class GameEvent(BaseModel):
+# Pydantic models for data validation
+class CharacterState(BaseModel):
+    t: float
     actor: str
-    action: str
-    dir: str
-    hp: float
     pos: List[float]
-    t: str
+    dir: int
+    hp: float
+    stamina: float
+    action: str
 
-class ScreenshotData(BaseModel):
+class GameStateSnapshot(BaseModel):
     type: str
     image: str
-    metadata: Dict[str, Any]
+    hero_state: CharacterState
+    knight_state: CharacterState
 
 class QueryRequest(BaseModel):
     query: str
@@ -55,29 +68,40 @@ class QueryResponse(BaseModel):
 screenshot_queue = asyncio.Queue()
 
 async def screenshot_saver():
-    """Background task to save screenshots"""
+    """Background task to save screenshots and their associated state data"""
     global screenshot_counter
     while True:
         try:
-            frame_timestamp, image_data, metadata = await screenshot_queue.get()
-            image_path = os.path.join(SESSION_FOLDER, f"screenshot_{screenshot_counter}.png")
-            metadata_path = os.path.join(SESSION_FOLDER, f"screenshot_{screenshot_counter}.json")
+            # The queue now contains the full character states alongside the image
+            image_data, hero_state, knight_state = await screenshot_queue.get()
             
+            # Define file paths
+            image_path = os.path.join(SESSION_FOLDER, f"snapshot_{screenshot_counter}.png")
+            metadata_path = os.path.join(SESSION_FOLDER, f"snapshot_{screenshot_counter}.json")
+            
+            # Save image
             with open(image_path, 'wb') as f:
                 f.write(image_data)
+            
+            # Save combined metadata for both characters
+            combined_metadata = {
+                "hero_state": hero_state,
+                "knight_state": knight_state
+            }
             with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=4)
+                json.dump(combined_metadata, f, indent=4)
+                
             screenshot_counter += 1
             screenshot_queue.task_done()
         except Exception as e:
-            print(f"Error saving screenshot: {e}")
+            print(f"Error saving screenshot snapshot: {e}")
 
-# Start background task
+# Start background task on app startup
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(screenshot_saver())
 
-# HTTP Endpoints
+# --- HTTP Endpoints (for external querying, not used by the game client directly) ---
 @app.get("/")
 async def root():
     return {"message": "AI Bridge FastAPI Server", "status": "running"}
@@ -86,97 +110,57 @@ async def root():
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-@app.post("/events", response_model=Dict[str, str])
-async def add_events(events: List[GameEvent]):
-    """Add game events to ChromaDB"""
-    try:
-        # Convert events to the format expected by the original handler
-        data = []
-        for event in events:
-            event_dict = event.dict()
-            # Convert position lists to strings for ChromaDB compatibility
-            if 'pos' in event_dict and isinstance(event_dict['pos'], list):
-                event_dict['pos'] = ','.join(map(str, event_dict['pos']))
-            data.append(event_dict)
-        
-        texts = [f"{e['actor']} {e['action']} dir {e['dir']}"
-                 f" hp {e['hp']:.2f} dist ?"
-                 for e in data]
-        
-        db.add(ids=[str(e['t']) for e in data],
-               embeddings=embedder.encode(texts).tolist(),
-               metadatas=data)
-        
-        return {"status": "success", "message": f"Added {len(events)} events"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error adding events: {str(e)}")
-
 @app.post("/query", response_model=QueryResponse)
 async def query_events(request: QueryRequest):
     """Query events from ChromaDB"""
     try:
         vec = embedder.encode([request.query]).tolist()[0]
-        res = db.query(query_embeddings=[vec], n_results=7)
+        res = db.query(query_embeddings=[vec], n_results=10) # Increased results to 10
         return QueryResponse(results=res['metadatas'][0])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying events: {str(e)}")
 
-@app.post("/screenshot")
-async def save_screenshot(screenshot: ScreenshotData):
-    """Save screenshot data"""
+# --- WebSocket Endpoint (main communication channel with the game) ---
+@app.post("/game_state_snapshot")
+async def process_game_state_snapshot(snapshot: GameStateSnapshot):
+    """Receives, processes, and stores a complete game state snapshot."""
     try:
-        frame_timestamp = datetime.now().strftime("%H-%M-%S-%f")
-        image_data = base64.b64decode(screenshot.image.split(',')[1])
-        metadata = screenshot.metadata
+        # 1. Extract data from the payload
+        hero_state = snapshot.hero_state.dict()
+        knight_state = snapshot.knight_state.dict()
+
+        # 2. Queue the screenshot and states for saving to disk
+        image_data = base64.b64decode(snapshot.image.split(',')[1])
+        await screenshot_queue.put((image_data, hero_state, knight_state))
+
+        # 3. Prepare hero and knight data for the vector DB
+        states_to_embed = [hero_state, knight_state]
         
-        await screenshot_queue.put((frame_timestamp, image_data, metadata))
-        return {"status": "success", "message": "Screenshot queued for saving"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing screenshot: {str(e)}")
-
-# WebSocket endpoint for real-time communication
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    try:
-        while True:
-            raw_data = await websocket.receive_text()
-            data = json.loads(raw_data)
-
-            # Handle screenshot data
-            if isinstance(data, dict) and data.get('type') == 'screenshot':
-                try:
-                    frame_timestamp = datetime.now().strftime("%H-%M-%S-%f")
-                    image_data = base64.b64decode(data['image'].split(',')[1])
-                    metadata = data['metadata']
-                    
-                    await screenshot_queue.put((frame_timestamp, image_data, metadata))
-                except Exception as e:
-                    print(f"Error processing screenshot message: {e}")
-
-            # Handle event batch (existing logic)
-            elif isinstance(data, list):
-                # Convert position lists to strings for ChromaDB compatibility
-                for event in data:
-                    if 'pos' in event and isinstance(event['pos'], list):
-                        event['pos'] = ','.join(map(str, event['pos']))
-                
-                texts = [f"{e['actor']} {e['action']} dir {e['dir']}"
-                         f" hp {e['hp']:.2f} dist ?"
-                         for e in data]
-                db.add(ids=[str(e['t']) for e in data],
-                       embeddings=embedder.encode(texts).tolist(),
-                       metadatas=data)
+        texts = []
+        ids = []
+        for state in states_to_embed:
+            # Convert position list to a string for ChromaDB compatibility
+            pos_str = ','.join(map(str, state['pos']))
+            state['pos'] = pos_str
             
-            elif 'query' in data:  # retrieval request
-                vec = embedder.encode([data['query']]).tolist()[0]
-                res = db.query(query_embeddings=[vec], n_results=7)
-                await websocket.send_text(json.dumps(res['metadatas'][0]))
+            # Create descriptive text for embedding
+            text_description = f"{state['actor']} is performing {state['action']} at position {pos_str} with {state['hp']:.2f} HP and {state['stamina']:.2f} stamina"
+            texts.append(text_description)
+            
+            # Generate a unique ID for the document
+            doc_id = f"{state['t']}-{state['actor']}"
+            ids.append(doc_id)
 
-    except WebSocketDisconnect:
-        print("WebSocket client disconnected")
+        # 4. Add to ChromaDB
+        db.add(
+            ids=ids,
+            embeddings=embedder.encode(texts).tolist(),
+            metadatas=states_to_embed
+        )
+        return {"status": "success", "message": "Snapshot processed"}
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        print(f"Error processing game state snapshot: {e}")
+        raise HTTPException(status_code=500, detail="Error processing snapshot")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8765)
+    uvicorn.run(app, host="localhost", port=8765)
