@@ -1,19 +1,17 @@
 // RL.js - Refactored for multiple RL agents
 
 export class Agent {
-    constructor(name, actions) {
+    constructor(name, actions, config) {
         this.name = name;
         this.actions = actions;
 
-        // RL Parameters
+        // RL Parameters from config
         this.qTable = {};
-        this.learningRate = 0.10; // α
-        this.discountFactor = 0.90; // γ
-
-        // Epsilon-greedy exploration parameters
-        this.epsilonStart = 0.50; // Higher starting exploration
-        this.epsilonMin = 0.05;
-        this.epsilonDecay = (this.epsilonStart - this.epsilonMin) / 3000; // Slower decay over more steps
+        this.learningRate = config.learningRate || 0.1;
+        this.discountFactor = config.discountFactor || 0.9;
+        this.epsilonStart = config.epsilonStart || 0.5;
+        this.epsilonMin = config.epsilonMin || 0.05;
+        this.epsilonDecay = (this.epsilonStart - this.epsilonMin) / (config.decaySteps || 3000);
         this.steps = 0;
 
         // Load any saved Q-table from localStorage

@@ -21,6 +21,10 @@ class PlayScene extends Phaser.Scene {
     }
 
     preload() {
+        // Load agent configurations
+        this.load.json('heroConfig', 'heroknight.json');
+        this.load.json('knightConfig', 'pknight.json');
+
         // Load all assets with the correct, visually confirmed 128x128 frame size.
         this.load.image('boss_arena', 'assets/map/boss_arena.png');
         this.load.spritesheet('idle', 'assets/character/Idle.png', { frameWidth: 128, frameHeight: 128 });
@@ -184,8 +188,10 @@ class PlayScene extends Phaser.Scene {
         });
 
         // --- RL Agents Setup ---
-        this.heroAgent = new Agent('hero', HERO_ACTIONS);
-        this.knightAgent = new Agent('knight', KNIGHT_ACTIONS);
+        const heroConfig = this.cache.json.get('heroConfig');
+        const knightConfig = this.cache.json.get('knightConfig');
+        this.heroAgent = new Agent('hero', HERO_ACTIONS, heroConfig);
+        this.knightAgent = new Agent('knight', KNIGHT_ACTIONS, knightConfig);
 
         // --- Speed up simulation ---
         this.matter.world.engine.timing.timeScale = 4;
@@ -301,6 +307,17 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.movementAngle = 0;
         this.purpleKnight.movementDirection = 's';
         this.purpleKnight.staminaRegenDelay = 0;
+        
+        // Aggression system - MUCH more aggressive
+        this.purpleKnight.aggressionLevel = 25; // Start with some aggression
+        this.purpleKnight.timeSinceLastAttack = 0;
+        this.purpleKnight.consecutiveBlocks = 0;
+        this.purpleKnight.maxAggression = 200; // Allow higher aggression levels
+        
+        // Ominous marching system
+        this.purpleKnight.ominousMarchEnabled = true;
+        this.purpleKnight.marchSpeed = 1; // Slow, menacing approach
+        this.purpleKnight.lastFacingUpdate = 0;
         
         // Initialize armor attributes
         this.purpleKnight.armor = { 
@@ -536,8 +553,8 @@ class PlayScene extends Phaser.Scene {
         this.gameOverText.setText(didWin ? 'HERO WINS' : 'KNIGHT WINS').setVisible(true);
         this.restartText.setText('Restarting...').setVisible(true);
         
-        // After a short delay, save both Q-tables and restart
-        this.time.delayedCall(500, () => {
+        // After a short delay, save both Q-tables and restart automatically  
+        this.time.delayedCall(1500, () => {
             this.heroAgent.saveQ();
             this.knightAgent.saveQ();
             this.scene.restart();
@@ -1064,30 +1081,48 @@ class PlayScene extends Phaser.Scene {
     
 
     handleDeath(character) {
-        // Prevent multiple death sequences or running on an already dead character
-        if (this.isDeathSequenceActive || character.isDead) {
+        // This is the definitive death handler. No other logic should interfere once this is called.
+        if (character.isDead) {
             return;
         }
+        
+        console.log(`Death triggered for ${character.label}`); // Debug log
+        character.isDead = true;
         this.isDeathSequenceActive = true;
 
-        character.isDead = true;
+        // Stop all movement and physics.
         character.setVelocity(0, 0);
+        character.setStatic(true); // Make the body immovable.
+
+        // CRITICAL FIX: Stop all current animations and remove any pending animation listeners
+        // that could interrupt the death sequence.
+        character.anims.stop();
+        character.off('animationcomplete');
 
         const victor = (character === this.hero) ? this.purpleKnight : this.hero;
         const loser = character;
         const didWin = (victor === this.hero);
 
-        // Determine the correct facing direction for the victor's animation
+        // Determine the correct facing direction for the victor's animation.
         const victorFacing = (victor === this.hero) ? this.facing : victor.facing;
 
-        // Play animations
+        // Play the final animations.
         victor.anims.play(`unsheath-${victorFacing}`, true);
         loser.anims.play('die', true);
 
-        // Show game over screen ONLY when the 'die' animation finishes
+        // When the death animation completes, end the game.
+        // Add a backup timer in case animation doesn't complete
         loser.once('animationcomplete', (animation) => {
-            // Ensure we only trigger this from the 'die' animation
             if (animation.key === 'die') {
+                console.log('Death animation completed, showing game over');
+                this.showGameOverScreen(didWin);
+            }
+        });
+        
+        // Backup: Force game over after 2 seconds if animation doesn't trigger
+        this.time.delayedCall(2000, () => {
+            if (this.isDeathSequenceActive && !this.gameOverActive) {
+                console.log('Backup game over trigger');
                 this.showGameOverScreen(didWin);
             }
         });
@@ -1145,16 +1180,20 @@ class PlayScene extends Phaser.Scene {
         const oldHealth = target.health;
         target.health = Math.max(0, target.health - damage);
         
+        console.log(`${target.label} took ${damage} damage. Health: ${oldHealth} -> ${target.health}`);
+        
         // --- REWARD/PENALTY LOGIC ---
         const attacker = (target === this.hero) ? this.purpleKnight : this.hero;
         const attackerAgent = (attacker === this.hero) ? this.heroAgent : this.knightAgent;
         const targetAgent = (target === this.hero) ? this.heroAgent : this.knightAgent;
         
-        // Define reward/penalty values
-        const HIT_REWARD = 20;
-        const DAMAGE_PENALTY = -20;
-        const WIN_REWARD = 100;
-        const LOSS_PENALTY = -100;
+        // Define reward/penalty values - MAKE AGGRESSION HIGHLY REWARDED
+        // Scale rewards based on purple knight's aggression level
+        const aggressionMultiplier = attacker === this.purpleKnight ? (1 + this.purpleKnight.aggressionLevel / 50) : 1; // More aggressive scaling
+        const HIT_REWARD = 75 * aggressionMultiplier; // Higher base reward + escalating
+        const DAMAGE_PENALTY = -25; // Keep penalty moderate
+        const WIN_REWARD = 200; // Winning is very important
+        const LOSS_PENALTY = -200; // Losing is very bad
 
         // Get current states for updating Q-table
         const attackerPrevState = (attacker === this.hero) ? this.heroAgent.lastState : this.knightAgent.lastState;
@@ -1168,6 +1207,12 @@ class PlayScene extends Phaser.Scene {
         if (damage > 0) {
             if (attackerPrevState) {
                 attackerAgent.updateQ(attackerPrevState, attacker.lastAction, HIT_REWARD, this.getAgentState(attacker, true));
+                
+                // Reset aggression timer for purple knight when attacking successfully
+                if (attacker === this.purpleKnight) {
+                    this.purpleKnight.timeSinceLastAttack = 0;
+                    this.purpleKnight.consecutiveBlocks = 0;
+                }
             }
             if (targetPrevState) {
                 targetAgent.updateQ(targetPrevState, target.lastAction, DAMAGE_PENALTY, this.getAgentState(target, true));
@@ -1182,6 +1227,7 @@ class PlayScene extends Phaser.Scene {
             this.animateKnightHealthBarDamage(target, oldHealth);
         }
 
+        // Check for death condition - any knight reaching 0 health
         if (target.health <= 0 && !target.isDead) {
             // Penalize the loser, reward the winner
             if (targetPrevState) {
@@ -1302,10 +1348,13 @@ class PlayScene extends Phaser.Scene {
 
         const distBin = distance < 80 ? 'close' : (distance < 200 ? 'medium' : 'far');
         const heroAction = hero.isAttacking ? 'attacking' : (hero.isBlocking ? 'blocking' : 'idle');
-        const angleToHero = Phaser.Math.Angle.Between(this.purpleKnight.x, this.purpleKnight.y, hero.x, hero.y);
-        const relativeDir = this.getDirectionFromAngle(angleToHero);
-
-        return { distBin, heroAction, relativeDir };
+        
+        // Add aggression level to state to influence decision making - more sensitive thresholds
+        const aggressionBin = this.purpleKnight.aggressionLevel < 50 ? 'low' : 
+                             (this.purpleKnight.aggressionLevel < 100 ? 'medium' : 
+                             (this.purpleKnight.aggressionLevel < 150 ? 'high' : 'extreme'));
+        
+        return { distBin, heroAction, aggressionBin };
     }
 
     executeHeroAction(action) {
@@ -1324,7 +1373,7 @@ class PlayScene extends Phaser.Scene {
             if (direction.includes('w')) velocity.x = -1;
             if (direction.includes('e')) velocity.x = 1;
             
-            velocity.normalize().scale(3); // Walk speed
+            velocity.normalize().scale(5); // Increased from 3
             this.hero.setVelocity(velocity.x, velocity.y);
             this.hero.anims.play(`walk-${this.facing}`, true);
             return;
@@ -1356,19 +1405,36 @@ class PlayScene extends Phaser.Scene {
     executeKnightAction(action) {
         const knight = this.purpleKnight;
         if (knight.isDead || this.isActionInProgress(knight)) {
-            return;
-        }
-
+                return;
+            }
+            
+        // ALWAYS face the hero before executing any action for better responsiveness
         const angle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
         const direction = this.getDirectionFromAngle(angle);
         knight.facing = direction;
         
+        // Disable ominous marching temporarily during specific actions
+        if (action === 'attack' || action === 'block' || action.startsWith('lunge')) {
+            knight.ominousMarchEnabled = false;
+            this.time.delayedCall(300, () => {
+                if (knight.active) knight.ominousMarchEnabled = true;
+            });
+        }
+        
         const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+
+        // --- State Management ---
+        // Cancel block for any non-blocking action
+        if (action !== 'block') {
+            knight.isBlocking = false;
+        }
 
         switch(action) {
             case 'attack':
                 if (distanceToPlayer < 100 && knight.stamina >= 15) {
                     this.performAttack(knight, 'melee');
+                    // Reset consecutive blocks when attacking
+                    knight.consecutiveBlocks = 0;
                 }
                 break;
             case 'approach':
@@ -1376,8 +1442,7 @@ class PlayScene extends Phaser.Scene {
                     knight.stamina -= 5;
                     knight.currentMovement = 'approach';
                     knight.movementDuration = 500;
-                    knight.movementAngle = angle;
-                    knight.movementDirection = direction;
+                    // No need to set angle/direction here, as tracking handles it
                 }
                 break;
             case 'lunge_left':
@@ -1401,13 +1466,15 @@ class PlayScene extends Phaser.Scene {
             case 'block':
                 if (!knight.blockDisabled) {
                     knight.isBlocking = true;
-                    knight.anims.play(`shield-block-start-${direction}`, true);
+                    // Track consecutive blocks for aggression penalty
+                    knight.consecutiveBlocks++;
+                    // The actual animation will be handled by the tracking logic in update()
                 }
                 break;
             case 'idle':
                 knight.setVelocity(0, 0);
-                knight.anims.play(`idle-${direction}`, true);
-                break;
+                // Idle animation is handled by the tracking logic
+                    break;
         }
     }
 
@@ -1415,11 +1482,93 @@ class PlayScene extends Phaser.Scene {
         const anim = character.anims.currentAnim;
         if (!anim) return false;
 
-        const isMoving = character.body.velocity.x !== 0 || character.body.velocity.y !== 0;
-        const isStandardAction = anim.key.startsWith('melee-') || anim.key.startsWith('rolling-') || anim.key.startsWith('take-damage-') || anim.key.startsWith('kick-') || anim.key.startsWith('melee2-') || anim.key.startsWith('special1-') || anim.key.startsWith('front-flip-');
-        const isBlocking = anim.key.startsWith('shield-block-');
+        // Defines actions that are uninterruptible. Note that blocking is NOT here.
+        const isUninterruptibleAnim = anim.key.startsWith('melee-') ||
+                                    anim.key.startsWith('rolling-') ||
+                                    anim.key.startsWith('take-damage-') ||
+                                    anim.key.startsWith('special1-') ||
+                                    anim.key === 'die';
 
-        return character.isAttacking || (character.anims.isPlaying && (isStandardAction || isBlocking)) || isMoving;
+        return character.isAttacking || (character.anims.isPlaying && isUninterruptibleAnim);
+    }
+
+    handleIdleAndTracking(character, opponent) {
+        // This is a hard stop. If a character is dead, no tracking or idle logic should run.
+        if (character.isDead) {
+            return;
+        }
+        
+        if (this.isActionInProgress(character)) {
+            return;
+        }
+
+        const angleToOpponent = Phaser.Math.Angle.Between(character.x, character.y, opponent.x, opponent.y);
+        const direction = this.getDirectionFromAngle(angleToOpponent);
+        
+        // For the hero, the facing property is top-level; for the knight, it's on the object itself.
+        if (character === this.hero) {
+            this.facing = direction;
+        } else {
+            character.facing = direction;
+            
+            // OMINOUS MARCHING: Purple knight always faces and slowly approaches hero
+            if (character === this.purpleKnight && character.ominousMarchEnabled) {
+                this.executeOminousMarch(character, opponent);
+                return; // Skip normal idle logic
+            }
+        }
+
+        if (character.isBlocking) {
+            // If the block animation isn't already playing, start it.
+            if (!character.anims.currentAnim || !character.anims.currentAnim.key.startsWith('shield-block-mid-')) {
+                character.anims.play(`shield-block-mid-${direction}`, true);
+            }
+        } else {
+            // If not blocking and not moving via AI, play the idle animation.
+             if (character.body.velocity.x === 0 && character.body.velocity.y === 0) {
+                character.anims.play(`idle-${direction}`, true);
+            }
+        }
+    }
+
+    executeOminousMarch(knight, hero) {
+        // Calculate distance and angle to hero
+        const distance = Phaser.Math.Distance.Between(knight.x, knight.y, hero.x, hero.y);
+        const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, hero.x, hero.y);
+        const direction = this.getDirectionFromAngle(angleToHero);
+        
+        // Always face the hero
+        knight.facing = direction;
+        
+        // Only march if not too close (maintain menacing distance but always approach)
+        if (distance > 70) {
+            // Slow, ominous approach - like a horror movie villain
+            const marchSpeed = knight.marchSpeed * (1 + knight.aggressionLevel / 200); // Slightly faster with aggression
+            const moveVector = new Phaser.Math.Vector2(Math.cos(angleToHero), Math.sin(angleToHero)).scale(marchSpeed);
+            
+            // Set as non-static temporarily for movement
+            knight.setStatic(false);
+            knight.setVelocity(moveVector.x, moveVector.y);
+            
+            // Play slow walk animation for ominous effect
+            const walkAnimKey = `walk-${direction}`;
+            if (knight.anims.currentAnim?.key !== walkAnimKey) {
+                knight.anims.play(walkAnimKey, true);
+                // Slow down the walk animation for more menacing effect
+                knight.anims.msPerFrame = 100; // Slower walk
+            }
+        } else {
+            // Stop when close, but keep staring menacingly
+            knight.setVelocity(0, 0);
+            knight.setStatic(true);
+            
+            // Menacing idle stare
+            const idleAnimKey = `idle-${direction}`;
+            if (knight.anims.currentAnim?.key !== idleAnimKey) {
+                knight.anims.play(idleAnimKey, true);
+                knight.anims.msPerFrame = 150; // Slower idle for creepy effect
+            }
+        }
     }
 
     update(time, delta) {
@@ -1441,7 +1590,7 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.actionCooldown = (this.purpleKnight.actionCooldown || 0) - delta;
         
         // Hero AI Tick
-        if (this.hero.actionCooldown <= 0) {
+        if (this.hero.actionCooldown <= 0 && !this.hero.isDead) {
             const heroState = this.getHeroState();
             this.hero.lastState = heroState; // Store state
             const heroAction = this.heroAgent.chooseAction(heroState);
@@ -1450,14 +1599,46 @@ class PlayScene extends Phaser.Scene {
             this.hero.actionCooldown = 100; // Faster decisions
         }
 
-        // Knight AI Tick
-        if (this.purpleKnight.actionCooldown <= 0) {
+        // Knight AI Tick - More responsive for combat
+        if (this.purpleKnight.actionCooldown <= 0 && !this.purpleKnight.isDead) {
             const knightState = this.getKnightState();
+
+            // --- Aggression System Updates ---
+            this.purpleKnight.timeSinceLastAttack += delta;
+            
+            // MUCH faster aggression buildup
+            if (this.purpleKnight.timeSinceLastAttack > 1500) { // Only 1.5 seconds now
+                this.purpleKnight.aggressionLevel = Math.min(this.purpleKnight.maxAggression, 
+                    this.purpleKnight.aggressionLevel + 2); // 4x faster buildup
+            }
+            
+            // Harsher penalty for excessive blocking
+            if (this.purpleKnight.consecutiveBlocks > 2) { // Trigger earlier
+                this.knightAgent.updateQ(this.purpleKnight.lastState, 'block', -25, knightState); // Bigger penalty
+            }
+            
+            // Additional aggression bonus when hero is close but not attacking
+            if (knightState.distBin === 'close' && knightState.heroAction === 'idle') {
+                this.purpleKnight.aggressionLevel = Math.min(this.purpleKnight.maxAggression, 
+                    this.purpleKnight.aggressionLevel + 1);
+            }
+
+            // --- New Passivity Penalty ---
+            // If the knight is far away and not already approaching, give it a small nudge.
+            if (this.purpleKnight.lastState && knightState.distBin === 'far' && this.purpleKnight.lastAction !== 'approach') {
+                this.knightAgent.updateQ(this.purpleKnight.lastState, this.purpleKnight.lastAction, -5, knightState);
+            }
+            // --- End Penalty ---
+
             this.purpleKnight.lastState = knightState; // Store state
             const knightAction = this.knightAgent.chooseAction(knightState);
             this.purpleKnight.lastAction = knightAction; // Store action
             this.executeKnightAction(knightAction);
-            this.purpleKnight.actionCooldown = 100; // Faster decisions
+            
+            // Aggressive knights act faster - scale cooldown based on aggression
+            const baseCooldown = 50;
+            const aggressionSpeedup = Math.max(0.3, 1 - (this.purpleKnight.aggressionLevel / 300));
+            this.purpleKnight.actionCooldown = baseCooldown * aggressionSpeedup;
         }
 
                 // --- Handle Knight's Ongoing Movement ---
@@ -1466,34 +1647,44 @@ class PlayScene extends Phaser.Scene {
             knight.movementDuration -= delta;
             // (Movement execution logic remains the same)
             if (knight.currentMovement === 'approach') {
-                const knightSpeed = 2;
-                const moveVector = new Phaser.Math.Vector2(Math.cos(knight.movementAngle), Math.sin(knight.movementAngle)).scale(knightSpeed);
+                const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+                const direction = this.getDirectionFromAngle(angleToHero);
+                const knightSpeed = 5;
+
+                const moveVector = new Phaser.Math.Vector2(Math.cos(angleToHero), Math.sin(angleToHero)).scale(knightSpeed);
                 knight.setStatic(false);
                 knight.setVelocity(moveVector.x, moveVector.y);
-                knight.anims.play(`walk-${knight.movementDirection}`, true);
+
+                const walkAnimKey = `walk-${direction}`;
+                if (knight.anims.currentAnim?.key !== walkAnimKey) {
+                    knight.anims.play(walkAnimKey, true);
+                }
             } else if (knight.currentMovement.startsWith('lunge')) {
                 const lungeSpeed = 4;
                 const moveVector = new Phaser.Math.Vector2(Math.cos(knight.movementAngle), Math.sin(knight.movementAngle)).scale(lungeSpeed);
                 knight.setStatic(false);
                 knight.setVelocity(moveVector.x, moveVector.y);
-                knight.anims.play(`rolling-${knight.movementDirection}`, true);
+                const rollAnimKey = `rolling-${knight.movementDirection}`;
+                if (knight.anims.currentAnim?.key !== rollAnimKey) {
+                    knight.anims.play(rollAnimKey, true);
+                }
             }
 
             if (knight.movementDuration <= 0) {
                 knight.currentMovement = null;
                 knight.setVelocity(0, 0);
                 knight.setStatic(true);
+
+                // Explicitly stop the current animation and switch to idle.
+                const idleAnimKey = `idle-${knight.facing}`;
+                if (knight.anims.currentAnim?.key !== idleAnimKey) {
+                    knight.anims.play(idleAnimKey, true);
+                }
             }
         }
-        
-        // --- Knight Tracking ---
-        // Make the knight always face the hero if not in the middle of an action.
-        if (!this.isActionInProgress(knight)) {
-            const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-            const direction = this.getDirectionFromAngle(angleToHero);
-            knight.facing = direction;
-            knight.anims.play(`idle-${direction}`, true);
-        }
+        // --- Character Idle & Tracking ---
+        this.handleIdleAndTracking(this.hero, this.purpleKnight);
+        this.handleIdleAndTracking(this.purpleKnight, this.hero);
         
         // Ensure no visual rotation
         this.hero.setRotation(0);
