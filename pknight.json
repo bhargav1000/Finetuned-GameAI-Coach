@@ -1,0 +1,7 @@
+{
+    "learningRate": 0.1,
+    "discountFactor": 0.9,
+    "epsilonStart": 0.7,
+    "epsilonMin": 0.1,
+    "decaySteps": 1000
+}

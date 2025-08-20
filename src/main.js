@@ -1,4 +1,12 @@
-import { Q, α, γ, ε, key, chooseAction, updateQ, saveQ } from './RL.js';
+import { Agent } from './RL.js';
+
+// Define action sets for each character
+const KNIGHT_ACTIONS = ['attack', 'approach', 'lunge_left', 'lunge_right', 'block', 'idle'];
+const HERO_ACTIONS = [
+    'move_n', 'move_ne', 'move_e', 'move_se', 'move_s', 'move_sw', 'move_w', 'move_nw',
+    'attack_melee', 'attack_melee2', 'attack_special1',
+    'block', 'dodge'
+];
 
 class PlayScene extends Phaser.Scene {
     constructor() {
@@ -13,6 +21,10 @@ class PlayScene extends Phaser.Scene {
     }
 
     preload() {
+        // Load agent configurations
+        this.load.json('heroConfig', 'heroknight.json');
+        this.load.json('knightConfig', 'pknight.json');
+
         // Load all assets with the correct, visually confirmed 128x128 frame size.
         this.load.image('boss_arena', 'assets/map/boss_arena.png');
         this.load.spritesheet('idle', 'assets/character/Idle.png', { frameWidth: 128, frameHeight: 128 });
@@ -166,29 +178,41 @@ class PlayScene extends Phaser.Scene {
 
         directions.forEach((direction, index) => {
             const startFrame = index * framesPerRow;
+            const unsheathFrames = this.anims.generateFrameNumbers('unsheath', { start: startFrame, end: startFrame + 14 });
             this.anims.create({
                 key: `unsheath-${direction}`,
-                frames: this.anims.generateFrameNumbers('unsheath', { start: startFrame, end: startFrame + 14 }),
+                frames: unsheathFrames.slice().reverse(), // Play frames in reverse order
                 frameRate: 15,
                 repeat: 0
             });
         });
+
+        // --- RL Agents Setup ---
+        const heroConfig = this.cache.json.get('heroConfig');
+        const knightConfig = this.cache.json.get('knightConfig');
+        this.heroAgent = new Agent('hero', HERO_ACTIONS, heroConfig);
+        this.knightAgent = new Agent('knight', KNIGHT_ACTIONS, knightConfig);
+
+        // --- Speed up simulation ---
+        this.matter.world.engine.timing.timeScale = 4;
+        this.anims.globalTimeScale = 4;
 
         // --- Hero with Physics ---
         this.hero = this.matter.add.sprite(map.width/2, map.height/2, 'idle', 0);
         this.hero.setScale(1.5);
         this.hero.setCircle(42);
         this.hero.setFixedRotation();   // no spin
-        this.hero.setIgnoreGravity(true).setFrictionAir(0);
+        this.hero.setIgnoreGravity(true);
         this.hero.body.slop = 0.5;   // tighter separation test
         this.hero.body.inertia = Infinity; // prevent any rotation
         this.hero.label = 'hero';
-        // Hero collides with everything normally but can't be pushed by knight
+        // Hero collides with walls and knight - but immovable
         this.hero.body.collisionFilter.category = 0x0001;
-        this.hero.body.collisionFilter.mask = 0x0006; // Collide with walls and knight
-        // Make hero heavy to resist being pushed by knight
-        this.hero.setMass(10000);
-        this.hero.body.frictionStatic = 0.99;
+        this.hero.body.collisionFilter.mask = 0x0006; // Collide with walls AND knight
+        // Make hero extremely heavy and immovable to prevent being pushed
+        this.hero.setMass(50000); // Increased mass
+        this.hero.body.frictionStatic = 1.0; // Maximum static friction
+        this.hero.body.frictionAir = 0.1; // Add air friction to stop sliding
 
         // Initialize attack state
         this.hero.isAttacking = false;
@@ -222,25 +246,21 @@ class PlayScene extends Phaser.Scene {
 
         this.hero.on('animationcomplete', (animation) => {
             if (this.hero.isDead) { return; }
+            
+            // If the shield-block-start animation completes, check if the AI still wants to block.
             if (animation.key.startsWith('shield-block-start-')) {
-                if (this.keys.b.isDown) {
+                if (this.hero.isBlocking) { // Check the AI-controlled state flag
                     this.hero.anims.play(`shield-block-mid-${this.facing}`, true);
                 } else {
-                    this.hero.isBlocking = false;
                     this.hero.anims.play(`idle-${this.facing}`, true);
                 }
                 return;
             }
 
+            // For all other actions, simply return to idle and wait for the next AI decision.
             if (animation.key.startsWith('melee-') || animation.key.startsWith('rolling-') || animation.key.startsWith('take-damage-') || animation.key.startsWith('kick-') || animation.key.startsWith('melee2-') || animation.key.startsWith('special1-') || animation.key.startsWith('front-flip-')) {
-                // After an action, check if we should return to blocking or idle.
-                if (this.keys.b.isDown && !this.hero.blockDisabled) {
-                    this.hero.isBlocking = true;
-                    this.hero.anims.play(`shield-block-mid-${this.facing}`, true);
-                } else {
-                    this.hero.isBlocking = false; // Ensure blocking is off if key isn't pressed
+                this.hero.isBlocking = false; // Reset blocking state
                     this.hero.anims.play(`idle-${this.facing}`, true);
-                }
             }
         }, this);
 
@@ -254,9 +274,9 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.body.slop = 0.5;   // tighter separation test
         this.purpleKnight.body.inertia = Infinity; // prevent any rotation
         this.purpleKnight.label = 'knight';
-        // Knight is SOLID - collides with hero and walls
+        // Knight collides with walls and hero - but immovable when static
         this.purpleKnight.body.collisionFilter.category = 0x0002;
-        this.purpleKnight.body.collisionFilter.mask = 0x0005; // Collide with hero and walls
+        this.purpleKnight.body.collisionFilter.mask = 0x0005; // Collide with walls AND hero
         // Make knight EXTREMELY heavy and resistant to movement
         // Knight physics: Make completely immovable
         this.purpleKnight.setStatic(true); // Truly immovable static body
@@ -276,8 +296,6 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.currentMovement = null;
         this.purpleKnight.movementDuration = 0;
         this.purpleKnight.isDead = false;
-        this.purpleKnight.rewardAccumulator = 0;     // track per-frame reward
-        this.lastRewardTick = 0;
         
         // Initialize stamina for knight
         this.purpleKnight.maxStamina = 100;
@@ -290,6 +308,17 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.movementAngle = 0;
         this.purpleKnight.movementDirection = 's';
         this.purpleKnight.staminaRegenDelay = 0;
+        
+        // Aggression system - MUCH more aggressive
+        this.purpleKnight.aggressionLevel = 25; // Start with some aggression
+        this.purpleKnight.timeSinceLastAttack = 0;
+        this.purpleKnight.consecutiveBlocks = 0;
+        this.purpleKnight.maxAggression = 200; // Allow higher aggression levels
+        
+        // Ominous marching system
+        this.purpleKnight.ominousMarchEnabled = true;
+        this.purpleKnight.marchSpeed = 1; // Slow, menacing approach
+        this.purpleKnight.lastFacingUpdate = 0;
         
         // Initialize armor attributes
         this.purpleKnight.armor = { 
@@ -345,8 +374,16 @@ class PlayScene extends Phaser.Scene {
         ];
         this.obstacles = walls;
 
-        // Set up collision detection for attacks
-        
+        // Set up collision detection for attacks and ROBUST anti-pushing system
+        this.matter.world.on('beforeupdate', () => {
+            // ABSOLUTE ANTI-PUSH SYSTEM - No knight can ever push the other
+            this.preventKnightPushing();
+        });
+
+        // Add collision detection specifically for knight-to-knight interactions
+        this.matter.world.on('collisionstart', (event) => {
+            this.handleKnightCollisions(event);
+        });
 
 
         // F2 debug
@@ -423,7 +460,7 @@ class PlayScene extends Phaser.Scene {
                 fontStyle: 'bold'
             }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setVisible(false);
 
-            this.restartText = this.add.text(this.game.config.width / 2, this.game.config.height / 2 + 20, 'Press Q to Restart', {
+            this.restartText = this.add.text(this.game.config.width / 2, this.game.config.height / 2 + 20, 'Game Over', {
                 fontSize: '24px',
                 fill: '#ffffff'
             }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setVisible(false);
@@ -450,17 +487,15 @@ class PlayScene extends Phaser.Scene {
             this.updateStaminaBar(); // Initial draw
         }
 
-        // --- Event Logging & WebSocket Bridge ---
-        this.socket = new WebSocket('ws://localhost:8765');
-        this.eventBuf = [];
+        // --- Event Logging Setup ---
+        // Note: Event buffering and WebSocket logic has been removed.
+        // Data is now sent via HTTP POST in the takeScreenshot function.
         this.aiLog = [];
         this.hitCount = 0;
         this.totalActions = 0;
         
         this.logEvt = (actor, action) => {
-            // Hero's facing direction is on the scene, knight's is on the object itself
             const directionStr = (actor === this.hero) ? this.facing : actor.facing;
-
             const event = {
                 t: this.time.now,
                 actor: actor.name,
@@ -469,28 +504,9 @@ class PlayScene extends Phaser.Scene {
                 hp: actor.health / actor.maxHealth,
                 action
             };
-            
-            this.eventBuf.push(event);
-            
-            // Display event in bottom panel
+            // The displayEvent function can still be used for local debug display
             this.displayEvent(event);
-            
-            if (this.eventBuf.length > 60) {
-                this.eventBuf.shift();
-            }
         };
-
-        // Flush event buffer every 150ms
-        this.time.addEvent({
-            delay: 150,
-            loop: true,
-            callback: () => {
-                if (this.socket.readyState === WebSocket.OPEN && this.eventBuf.length) {
-                    this.socket.send(JSON.stringify(this.eventBuf));
-                    this.eventBuf.length = 0;
-                }
-            }
-        });
 
         // --- Camera ---
         this.cameras.main.startFollow(this.hero);
@@ -541,9 +557,17 @@ class PlayScene extends Phaser.Scene {
 
     showGameOverScreen(didWin) {
         this.gameOverActive = true;
-        this.isDeathSequenceActive = false; // Allow Q to be pressed
-        this.gameOverText.setText(didWin ? 'YOU WIN' : 'YOU DIED').setVisible(true);
-        this.restartText.setVisible(true);
+        this.isDeathSequenceActive = false;
+
+        this.gameOverText.setText(didWin ? 'HERO WINS' : 'KNIGHT WINS').setVisible(true);
+        this.restartText.setText('Restarting...').setVisible(true);
+        
+        // After a short delay, save both Q-tables and restart automatically  
+        this.time.delayedCall(1500, () => {
+            this.heroAgent.saveQ();
+            this.knightAgent.saveQ();
+            this.scene.restart();
+        });
     }
 
     updateKnightHealthBar() {
@@ -690,60 +714,46 @@ class PlayScene extends Phaser.Scene {
     }
 
     animateKnightHealthBarDamage(target, oldHealth) {
-        // Fallback: immediately update health bar if animation system fails
+        // Simple smooth reduction without flashing
         if (!this.tweens) {
-    
             this.updateKnightHealthBar();
             return;
         }
         
-        // Create a temporary "damage flash" effect
         const x = this.game.config.width / 2 - 100;
-        const y = this.game.config.height - 50;
+        const y = this.game.config.height - 60;
         const w = 200;
-        const h = 20;
+        const h = 25;
         
-        // Flash the knight health bar white briefly
-        if (this.knightHealthFlash) this.knightHealthFlash.destroy();
-        this.knightHealthFlash = this.add.graphics().setScrollFactor(0).setDepth(103);
-        this.knightHealthFlash.fillStyle(0xffffff, 0.7);
-        this.knightHealthFlash.fillRect(x, y, w, h);
-        
-        // Animate the health bar dropping from old to new value
+        // Animate the health bar dropping from old to new value smoothly
         const startHealthWidth = (oldHealth / this.purpleKnight.maxHealth) * w;
         const endHealthWidth = (target.health / this.purpleKnight.maxHealth) * w;
         
-
-        
-        // Tween the health bar width
+        // Smooth transition without flash
         this.tweens.add({
             targets: { width: startHealthWidth },
             width: endHealthWidth,
-            duration: 300,
-            ease: 'Power2',
+            duration: 200, // Faster, smoother transition
+            ease: 'Power1', // Smoother easing
             onUpdate: (tween) => {
                 const currentWidth = tween.targets[0].width;
                 this.knightHealthBar.clear();
-                this.knightHealthBar.fillStyle(0x9400D3);
-                this.knightHealthBar.fillRect(x, y, Math.max(0, currentWidth), h);
+                
+                const healthPercentage = Math.max(0, currentWidth / w);
+                
+                if (currentWidth > 0) {
+                    // Main Bar
+                    this.knightHealthBar.fillStyle(0x9400D3);
+                    this.knightHealthBar.fillRect(x, y, currentWidth, h);
+                    // Top Highlight
+                    this.knightHealthBar.fillStyle(0xC8A2C8);
+                    this.knightHealthBar.fillRect(x, y, currentWidth, h * 0.25);
+                }
             },
             onComplete: () => {
-
- // Ensure final state is correct
+                // Ensure final state matches the standard health bar
+                this.updateKnightHealthBar();
             }
-        });
-        
-        // Remove the flash effect
-        this.time.delayedCall(100, () => {
-            if (this.knightHealthFlash) {
-                this.knightHealthFlash.destroy();
-                this.knightHealthFlash = null;
-            }
-        });
-        
-        // Fallback: update directly after a delay if animation fails
-        this.time.delayedCall(400, () => {
-            this.updateKnightHealthBar();
         });
     }
 
@@ -767,6 +777,161 @@ class PlayScene extends Phaser.Scene {
         else if (degrees >= -112.5 && degrees < -67.5) direction = 'n';
         else if (degrees >= -67.5 && degrees < -22.5) direction = 'ne';
         return direction;
+    }
+
+    // Helper function to determine the best movement direction toward a target
+    getBestMovementTowardTarget(mover, target) {
+        const angle = Phaser.Math.Angle.Between(mover.x, mover.y, target.x, target.y);
+        const direction = this.getDirectionFromAngle(angle);
+        return `move_${direction}`;
+    }
+
+    // Helper function to check if a movement action moves toward a target
+    isMovingTowardTarget(moveAction, mover, target) {
+        if (!moveAction.startsWith('move_')) return false;
+        
+        const moveDirection = moveAction.substring(5); // Remove 'move_' prefix
+        const targetDirection = this.getDirectionFromAngle(Phaser.Math.Angle.Between(mover.x, mover.y, target.x, target.y));
+        
+        // Check if the movement direction is the same or close to the target direction
+        const directionAngles = {
+            'n': -90, 'ne': -45, 'e': 0, 'se': 45,
+            's': 90, 'sw': 135, 'w': 180, 'nw': -135
+        };
+        
+        const moveAngle = directionAngles[moveDirection];
+        const targetAngle = directionAngles[targetDirection];
+        
+        if (moveAngle === undefined || targetAngle === undefined) return false;
+        
+        // Calculate angle difference (handling wraparound)
+        let angleDiff = Math.abs(moveAngle - targetAngle);
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
+        
+        // Consider it "toward" if within 67.5 degrees (1.5 directions)
+        return angleDiff <= 67.5;
+    }
+
+    // ROBUST ANTI-PUSH SYSTEM - Prevents all forms of knight pushing
+    preventKnightPushing() {
+        if (!this.hero || !this.purpleKnight || this.hero.isDead || this.purpleKnight.isDead) return;
+        
+        const heroBody = this.hero.body;
+        const knightBody = this.purpleKnight.body;
+        
+        if (!heroBody || !knightBody) return;
+        
+        // Store original positions for restoration if needed
+        if (!this.lastValidHeroPos) {
+            this.lastValidHeroPos = { x: this.hero.x, y: this.hero.y };
+        }
+        if (!this.lastValidKnightPos) {
+            this.lastValidKnightPos = { x: this.purpleKnight.x, y: this.purpleKnight.y };
+        }
+        
+        // Calculate current distance between knights
+        const currentDistance = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, this.purpleKnight.x, this.purpleKnight.y);
+        const minSeparation = 85; // Minimum allowed distance
+        
+        // If knights are too close, separate them immediately
+        if (currentDistance < minSeparation) {
+            this.separateKnights(minSeparation);
+        }
+        
+        // ABSOLUTE velocity control - prevent any unintended movement
+        // Hero movement control
+        if (!heroBody.isStatic) {
+            const heroVel = heroBody.velocity;
+            const heroSpeed = Math.sqrt(heroVel.x * heroVel.x + heroVel.y * heroVel.y);
+            
+            // Only allow movement if it's AI-commanded and doesn't push the other knight
+            if (heroSpeed > 0) {
+                const futureHeroX = this.hero.x + heroVel.x * 0.1; // Predict 0.1 seconds ahead
+                const futureHeroY = this.hero.y + heroVel.y * 0.1;
+                const futureDistance = Phaser.Math.Distance.Between(futureHeroX, futureHeroY, this.purpleKnight.x, this.purpleKnight.y);
+                
+                // If movement would cause collision, stop it
+                if (futureDistance < minSeparation || heroSpeed > 6) {
+                    this.hero.setVelocity(0, 0);
+                } else {
+                    // Update last valid position
+                    this.lastValidHeroPos = { x: this.hero.x, y: this.hero.y };
+                }
+            }
+        }
+        
+        // Purple knight movement control
+        if (!knightBody.isStatic) {
+            const knightVel = knightBody.velocity;
+            const knightSpeed = Math.sqrt(knightVel.x * knightVel.x + knightVel.y * knightVel.y);
+            
+            if (knightSpeed > 0) {
+                const futureKnightX = this.purpleKnight.x + knightVel.x * 0.1;
+                const futureKnightY = this.purpleKnight.y + knightVel.y * 0.1;
+                const futureDistance = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, futureKnightX, futureKnightY);
+                
+                // If movement would cause collision, stop it
+                if (futureDistance < minSeparation) {
+                    this.purpleKnight.setVelocity(0, 0);
+                    this.purpleKnight.setStatic(true);
+                } else {
+                    // Update last valid position
+                    this.lastValidKnightPos = { x: this.purpleKnight.x, y: this.purpleKnight.y };
+                }
+            }
+        }
+    }
+
+    // Handle direct collisions between knights
+    handleKnightCollisions(event) {
+        for (const pair of event.pairs) {
+            const { bodyA, bodyB } = pair;
+            
+            // Check if this is a knight-to-knight collision
+            if ((bodyA === this.hero.body && bodyB === this.purpleKnight.body) || 
+                (bodyA === this.purpleKnight.body && bodyB === this.hero.body)) {
+                
+                // Immediately stop all movement and separate
+                this.hero.setVelocity(0, 0);
+                this.purpleKnight.setVelocity(0, 0);
+                this.purpleKnight.setStatic(true);
+                
+                // Force separation
+                this.separateKnights(90);
+                break;
+            }
+        }
+    }
+
+    // Force separation between knights
+    separateKnights(minDistance) {
+        const currentDistance = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, this.purpleKnight.x, this.purpleKnight.y);
+        
+        if (currentDistance >= minDistance) return; // Already separated enough
+        
+        // Calculate separation vector
+        const angle = Phaser.Math.Angle.Between(this.purpleKnight.x, this.purpleKnight.y, this.hero.x, this.hero.y);
+        const separationNeeded = minDistance - currentDistance;
+        const halfSeparation = separationNeeded / 2;
+        
+        // Move both knights away from each other
+        const heroNewX = this.hero.x + Math.cos(angle) * halfSeparation;
+        const heroNewY = this.hero.y + Math.sin(angle) * halfSeparation;
+        
+        const knightNewX = this.purpleKnight.x - Math.cos(angle) * halfSeparation;
+        const knightNewY = this.purpleKnight.y - Math.sin(angle) * halfSeparation;
+        
+        // Apply positions
+        this.hero.setPosition(heroNewX, heroNewY);
+        this.purpleKnight.setPosition(knightNewX, knightNewY);
+        
+        // Ensure both are stationary
+        this.hero.setVelocity(0, 0);
+        this.purpleKnight.setVelocity(0, 0);
+        
+        // Update last valid positions
+        this.lastValidHeroPos = { x: heroNewX, y: heroNewY };
+        this.lastValidKnightPos = { x: knightNewX, y: knightNewY };
     }
 
     performAttack = (attacker, attackType) => {
@@ -947,12 +1112,7 @@ class PlayScene extends Phaser.Scene {
             mask: 0xFFFF // Check against all other categories
         };
 
-        // (Optional) visualise for one frame while you test
-        let sensorViz = null;
-        if (this.debugGraphicsVisible) {
-            sensorViz = this.add.graphics().lineStyle(1, 0xffff00)
-                .strokeRect(sensorBody.position.x - 20, sensorBody.position.y - 20, 40, 40);
-        }
+        // Debug visualization removed - no more yellow boxes
 
         // ------------------------------------------------------------------
         // Single-use collision handler
@@ -966,7 +1126,6 @@ class PlayScene extends Phaser.Scene {
                     this.handleAttackImpact(attacker, target, attackType);
                     this.matter.world.off('collisionstart', onHit);
                     this.matter.world.remove(sensorBody);
-                    if (sensorViz) sensorViz.destroy();
                     return;
                 }
             }
@@ -977,7 +1136,6 @@ class PlayScene extends Phaser.Scene {
         this.time.delayedCall(200, () => {
             this.matter.world.off('collisionstart', onHit);
             this.matter.world.remove(sensorBody);
-            if (sensorViz) sensorViz.destroy();
         });
     }
 
@@ -1027,14 +1185,6 @@ class PlayScene extends Phaser.Scene {
         // Apply the final calculated damage
         this.applyDamage(target, finalDamage);
 
-        if (wasKnight && finalDamage > 0) {          // knight hit hero
-            const next   = this.getKnightState(this.purpleKnight);
-            updateQ(this.purpleKnight.lastState,
-                    this.purpleKnight.lastAction,
-                    20,                              // positive reward
-                    next);
-        }
-
         // Play hit reaction and apply knockback
         if (finalDamage > 0 && !target.isDead) {
             this.playHitReaction(target);
@@ -1074,19 +1224,51 @@ class PlayScene extends Phaser.Scene {
     
 
     handleDeath(character) {
-        character.isDead = true;
-        character.setVelocity(0, 0);
-
-        if (character === this.purpleKnight) {
-            this.hero.anims.play(`unsheath-${this.facing}`, true);
-            this.purpleKnight.anims.play('die', true);
-            this.showGameOverScreen(true); // Player wins
-        } else {
-            this.purpleKnight.anims.play(`unsheath-${this.purpleKnight.facing}`, true);
-            this.hero.anims.play('die', true);
-            this.showGameOverScreen(false); // Player loses
+        // This is the definitive death handler. No other logic should interfere once this is called.
+        if (character.isDead) {
+            return;
         }
-        setTimeout(saveQ, 0);         // save once the episode ends
+        
+        console.log(`Death triggered for ${character.label}`); // Debug log
+        character.isDead = true;
+        this.isDeathSequenceActive = true;
+
+        // Stop all movement and physics.
+        character.setVelocity(0, 0);
+        character.setStatic(true); // Make the body immovable.
+
+        // CRITICAL FIX: Stop all current animations and remove any pending animation listeners
+        // that could interrupt the death sequence.
+        character.anims.stop();
+        character.off('animationcomplete');
+
+        const victor = (character === this.hero) ? this.purpleKnight : this.hero;
+        const loser = character;
+        const didWin = (victor === this.hero);
+
+        // Determine the correct facing direction for the victor's animation.
+        const victorFacing = (victor === this.hero) ? this.facing : victor.facing;
+
+        // Play the final animations.
+        victor.anims.play(`unsheath-${victorFacing}`, true);
+        loser.anims.play('die', true);
+
+        // When the death animation completes, end the game.
+        // Add a backup timer in case animation doesn't complete
+        loser.once('animationcomplete', (animation) => {
+            if (animation.key === 'die') {
+                console.log('Death animation completed, showing game over');
+                this.showGameOverScreen(didWin);
+            }
+        });
+        
+        // Backup: Force game over after 2 seconds if animation doesn't trigger
+        this.time.delayedCall(2000, () => {
+            if (this.isDeathSequenceActive && !this.gameOverActive) {
+                console.log('Backup game over trigger');
+                this.showGameOverScreen(didWin);
+            }
+        });
     }
 
 
@@ -1138,47 +1320,64 @@ class PlayScene extends Phaser.Scene {
     applyDamage = (target, damage) => {
         if (!target || target.isDead) return;
 
-
-
-
-        
-        // Store old health for animation
         const oldHealth = target.health;
-        target.health -= damage;
+        target.health = Math.max(0, target.health - damage);
         
-        // Ensure health doesn't go below 0
-        target.health = Math.max(0, target.health);
+        console.log(`${target.label} took ${damage} damage. Health: ${oldHealth} -> ${target.health}`);
+        
+        // --- REWARD/PENALTY LOGIC ---
+        const attacker = (target === this.hero) ? this.purpleKnight : this.hero;
+        const attackerAgent = (attacker === this.hero) ? this.heroAgent : this.knightAgent;
+        const targetAgent = (target === this.hero) ? this.heroAgent : this.knightAgent;
+        
+        // Define reward/penalty values - MAKE AGGRESSION HIGHLY REWARDED
+        // Scale rewards based on purple knight's aggression level
+        const aggressionMultiplier = attacker === this.purpleKnight ? (1 + this.purpleKnight.aggressionLevel / 50) : 1; // More aggressive scaling
+        const HIT_REWARD = 75 * aggressionMultiplier; // Higher base reward + escalating
+        const DAMAGE_PENALTY = -25; // Keep penalty moderate
+        const WIN_REWARD = 200; // Winning is very important
+        const LOSS_PENALTY = -200; // Losing is very bad
 
-        if (target === this.purpleKnight && damage > 0) {
-            const next = this.getKnightState(this.purpleKnight);
-            updateQ(this.purpleKnight.lastState,
-                    this.purpleKnight.lastAction,
-                    -20,                            // negative reward
-                    next);
-        }
+        // Get current states for updating Q-table
+        const attackerPrevState = (attacker === this.hero) ? this.heroAgent.lastState : this.knightAgent.lastState;
+        const targetPrevState = (target === this.hero) ? this.heroAgent.lastState : this.knightAgent.lastState;
         
-        // Log damage event
+        // Store last action taken by each agent, if not already stored
+        if (!attacker.lastAction) attacker.lastAction = attackerAgent.actions[0];
+        if (!target.lastAction) target.lastAction = targetAgent.actions[0];
+        
+        // Reward attacker, penalize target
+        if (damage > 0) {
+            if (attackerPrevState) {
+                attackerAgent.updateQ(attackerPrevState, attacker.lastAction, HIT_REWARD, this.getAgentState(attacker, true));
+                
+                // Reset aggression timer for purple knight when attacking successfully
+                if (attacker === this.purpleKnight) {
+                    this.purpleKnight.timeSinceLastAttack = 0;
+                    this.purpleKnight.consecutiveBlocks = 0;
+                }
+            }
+            if (targetPrevState) {
+                targetAgent.updateQ(targetPrevState, target.lastAction, DAMAGE_PENALTY, this.getAgentState(target, true));
+            }
+        }
+
         this.logEvt(target, `took_damage_${damage.toFixed(1)}`);
         
-        // Add visual feedback for damage taken - FORCE update health bars
         if (target === this.hero) {
-
             this.animateHealthBarDamage(target, oldHealth);
-            this.updateHealthBar();
         } else if (target === this.purpleKnight) {
-
             this.animateKnightHealthBarDamage(target, oldHealth);
-            this.updateKnightHealthBar();
         }
 
-        // Death check
+        // Check for death condition - any knight reaching 0 health
         if (target.health <= 0 && !target.isDead) {
-            if (target === this.purpleKnight) {      // knight DIED  (-100)
-                const next = {distBin:'dead',playerDir:'x'};
-                updateQ(this.purpleKnight.lastState,
-                        this.purpleKnight.lastAction,
-                        -100,
-                        next);
+            // Penalize the loser, reward the winner
+            if (targetPrevState) {
+                targetAgent.updateQ(targetPrevState, target.lastAction, LOSS_PENALTY, { state: 'dead' });
+            }
+            if (attackerPrevState) {
+                attackerAgent.updateQ(attackerPrevState, attacker.lastAction, WIN_REWARD, this.getAgentState(attacker, true));
             }
             this.handleDeath(target);
         } else if (!target.isDead) {
@@ -1190,6 +1389,16 @@ class PlayScene extends Phaser.Scene {
             });
         }
     };
+    
+    // Helper to get state for the correct agent
+    getAgentState(character, isNext = false) {
+        // For the next state, we always calculate fresh
+        if (isNext) {
+            return (character === this.hero) ? this.getHeroState() : this.getKnightState();
+        }
+        // For the previous state, we retrieve what we stored
+        return (character === this.hero) ? this.hero.lastState : this.purpleKnight.lastState;
+    }
 
     applyKnockback = (target, attacker, attackType) => {
         // Special knockback for special attack on knight
@@ -1259,549 +1468,526 @@ class PlayScene extends Phaser.Scene {
         });
     };
 
-    getKnightState(knight) {
-        // Calculate distance to player and bin it
-        const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        let distBin;
-        if (distanceToPlayer < 60) distBin = 'close';
-        else if (distanceToPlayer < 120) distBin = 'medium';
-        else distBin = 'far';
+    // =================================================================
+    //  STATE AND ACTION FUNCTIONS FOR RL AGENTS
+    // =================================================================
+
+    getHeroState() {
+        const knight = this.purpleKnight;
+        const distance = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, knight.x, knight.y);
         
-        // Get player direction relative to knight
-        const angle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        const playerDir = this.getDirectionFromAngle(angle);
-        
-        return { distBin, playerDir };
+        // Discretize state variables
+        const distBin = distance < 80 ? 'close' : (distance < 200 ? 'medium' : 'far');
+        const knightHpBin = knight.health / knight.maxHealth > 0.6 ? 'high' : (knight.health / knight.maxHealth > 0.3 ? 'mid' : 'low');
+        const heroHpBin = this.hero.health / this.hero.maxHealth > 0.6 ? 'high' : (this.hero.health / this.hero.maxHealth > 0.3 ? 'mid' : 'low');
+        const knightAction = knight.isAttacking ? 'attacking' : (knight.isBlocking ? 'blocking' : 'idle');
+
+        return { distBin, knightHpBin, heroHpBin, knightAction };
     }
 
-    executeKnightAction(knight, ctx) {
+    getKnightState() {
+        const hero = this.hero;
+        const distance = Phaser.Math.Distance.Between(this.purpleKnight.x, this.purpleKnight.y, hero.x, hero.y);
+
+        const distBin = distance < 80 ? 'close' : (distance < 200 ? 'medium' : 'far');
+        const heroAction = hero.isAttacking ? 'attacking' : (hero.isBlocking ? 'blocking' : 'idle');
+        
+        // Add aggression level to state to influence decision making - more sensitive thresholds
+        const aggressionBin = this.purpleKnight.aggressionLevel < 50 ? 'low' : 
+                             (this.purpleKnight.aggressionLevel < 100 ? 'medium' : 
+                             (this.purpleKnight.aggressionLevel < 150 ? 'high' : 'extreme'));
+        
+        return { distBin, heroAction, aggressionBin };
+    }
+
+    executeHeroAction(action) {
+        if (this.hero.isDead || this.isActionInProgress(this.hero)) {
+            return;
+        }
+
+        const movePrefix = 'move_';
+        if (action.startsWith(movePrefix)) {
+            const direction = action.substring(movePrefix.length);
+            this.facing = direction;
+            const velocity = new Phaser.Math.Vector2();
+            
+            if (direction.includes('n')) velocity.y = -1;
+            if (direction.includes('s')) velocity.y = 1;
+            if (direction.includes('w')) velocity.x = -1;
+            if (direction.includes('e')) velocity.x = 1;
+            
+            velocity.normalize().scale(5); // Increased from 3
+            this.hero.setVelocity(velocity.x, velocity.y);
+            this.hero.anims.play(`walk-${this.facing}`, true);
+            return;
+        }
+
+        const attackPrefix = 'attack_';
+        if (action.startsWith(attackPrefix)) {
+            const attackType = action.substring(attackPrefix.length);
+            this.performAttack(this.hero, attackType);
+            return;
+        }
+        
+        switch (action) {
+            case 'block':
+                if (!this.hero.blockDisabled) {
+                    this.hero.isBlocking = true;
+                    this.hero.anims.play(`shield-block-start-${this.facing}`, true);
+                }
+                break;
+            case 'dodge':
+                if (this.hero.stamina >= 30) {
+                    this.hero.stamina -= 30;
+                    this.hero.anims.play(`rolling-${this.facing}`, true);
+                }
+                break;
+        }
+    }
+    
+    executeKnightAction(action) {
+        const knight = this.purpleKnight;
+        if (knight.isDead || this.isActionInProgress(knight)) {
+                return;
+            }
+            
+        // ALWAYS face the hero before executing any action for better responsiveness
         const angle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
         const direction = this.getDirectionFromAngle(angle);
         knight.facing = direction;
         
-        const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-        const lungeSpeed = 3;
+        // Disable ominous marching temporarily during specific actions
+        if (action === 'attack' || action === 'block' || action.startsWith('lunge')) {
+            knight.ominousMarchEnabled = false;
+            this.time.delayedCall(300, () => {
+                if (knight.active) knight.ominousMarchEnabled = true;
+            });
+        }
         
-        knight.lastState  = this.getKnightState(knight);
-        knight.lastAction = ctx.action;
+        const distanceToPlayer = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
 
-        switch(ctx.action) {
+        // --- State Management ---
+        // Cancel block for any non-blocking action
+        if (action !== 'block') {
+            knight.isBlocking = false;
+        }
+
+        switch(action) {
             case 'attack':
-                if (distanceToPlayer < 100) { // Only attack if close enough
-                    // Check if knight has enough stamina for attack
-                    if (knight.stamina >= 15) {
-                        this.performAttack(knight, 'melee');
-                        return 'SUCCESS';
-                    } else {
-                
-                        return 'FAILURE';
-                    }
+                if (distanceToPlayer < 100 && knight.stamina >= 15) {
+                    this.performAttack(knight, 'melee');
+                    // Reset consecutive blocks when attacking
+                    knight.consecutiveBlocks = 0;
                 }
-                return 'FAILURE';
-                
+                break;
             case 'approach':
-                if (distanceToPlayer > 60 && !knight.movementDisabled) {
-                    // Check stamina for approach (minimal cost)
-                    if (knight.stamina >= 5) {
-                        // Check if movement would cause collision with player
-                        const moveDistance = 2 * 8; // speed * frames (rough estimate)
-                        if (distanceToPlayer > moveDistance + 40) { // 40px buffer to prevent overlap
-                    
-                            knight.stamina -= 5;
-                            knight.staminaRegenDelay = 250; // 0.25s delay for light movement
-                            knight.currentMovement = 'approach';
-                            knight.movementDuration = 500; // Move for 500ms
-                            knight.movementAngle = angle; // Store direction to player
-                            knight.movementDirection = direction;
-                            return 'SUCCESS';
-                        } else {
-
-                            return 'FAILURE';
-                        }
-                    } else {
-
-                        return 'FAILURE';
-                    }
-                } else if (knight.movementDisabled) {
-
-                    return 'FAILURE';
-                } else {
-
-                    knight.setVelocity(0, 0);
-                    knight.anims.play(`idle-${direction}`, true);
-                    return 'SUCCESS';
+                if (distanceToPlayer > 60 && knight.stamina >= 5) {
+                    knight.stamina -= 5;
+                    knight.currentMovement = 'approach';
+                    knight.movementDuration = 500;
+                    // No need to set angle/direction here, as tracking handles it
                 }
-                
+                break;
             case 'lunge_left':
-                // Check stamina and movement disability for lunge (higher cost)
-                if (knight.stamina >= 20 && !knight.movementDisabled) {
+                 if (knight.stamina >= 20) {
                     knight.stamina -= 20;
-                    knight.staminaRegenDelay = 400; // 0.4s delay for a lunge
                     knight.currentMovement = 'lunge_left';
-                    knight.movementDuration = 300; // Lunge for 300ms
-                    knight.movementAngle = angle - Math.PI/2; // Store left angle
-                    knight.movementDirection = direction; // Face towards player
-                    return 'SUCCESS';
-                } else if (knight.movementDisabled) {
-                    return 'FAILURE';
-                } else {
-
-                    return 'FAILURE';
+                    knight.movementDuration = 300;
+                    knight.movementAngle = angle - Math.PI / 2;
+                    knight.movementDirection = direction;
                 }
-                
+                break;
             case 'lunge_right':
-                // Check stamina and movement disability for lunge (higher cost)
-                if (knight.stamina >= 20 && !knight.movementDisabled) {
+                if (knight.stamina >= 20) {
                     knight.stamina -= 20;
-                    knight.staminaRegenDelay = 400; // 0.4s delay for a lunge
                     knight.currentMovement = 'lunge_right';
-                    knight.movementDuration = 300; // Lunge for 300ms
-                    knight.movementAngle = angle + Math.PI/2; // Store right angle
-                    knight.movementDirection = direction; // Face towards player
-                    return 'SUCCESS';
-                } else if (knight.movementDisabled) {
-                    return 'FAILURE';
+                    knight.movementDuration = 300;
+                    knight.movementAngle = angle + Math.PI / 2;
+                    knight.movementDirection = direction;
+                }
+                break;
+            case 'block':
+                if (!knight.blockDisabled) {
+                    knight.isBlocking = true;
+                    // Track consecutive blocks for aggression penalty
+                    knight.consecutiveBlocks++;
+                    // The actual animation will be handled by the tracking logic in update()
+                }
+                break;
+            case 'idle':
+                // NEVER ALLOW IDLE - always force an aggressive action
+                knight.setVelocity(0, 0);
+                
+                // Immediately choose a more aggressive action instead
+                const distanceToHero = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+                let forceAction;
+                
+                if (distanceToHero < 100) {
+                    forceAction = 'attack';
+                } else if (distanceToHero < 200) {
+                    forceAction = Math.random() < 0.5 ? 'lunge_left' : 'lunge_right';
                 } else {
-
-                    return 'FAILURE';
+                    forceAction = 'approach';
                 }
                 
-            default:
-                knight.setVelocity(0, 0);
-                knight.anims.play(`idle-${direction}`, true);
-                return 'SUCCESS';
+                // Execute the forced action immediately
+                this.executeKnightAction(forceAction);
+                return;
+        }
+    }
+
+    isActionInProgress(character) {
+        const anim = character.anims.currentAnim;
+        if (!anim) return false;
+
+        // Defines actions that are uninterruptible. Note that blocking is NOT here.
+        const isUninterruptibleAnim = anim.key.startsWith('melee-') ||
+                                    anim.key.startsWith('rolling-') ||
+                                    anim.key.startsWith('take-damage-') ||
+                                    anim.key.startsWith('special1-') ||
+                                    anim.key === 'die';
+
+        return character.isAttacking || (character.anims.isPlaying && isUninterruptibleAnim);
+    }
+
+    handleIdleAndTracking(character, opponent) {
+        // This is a hard stop. If a character is dead, no tracking or idle logic should run.
+        if (character.isDead) {
+            return;
+        }
+        
+        if (this.isActionInProgress(character)) {
+            return;
+        }
+
+        const angleToOpponent = Phaser.Math.Angle.Between(character.x, character.y, opponent.x, opponent.y);
+        const direction = this.getDirectionFromAngle(angleToOpponent);
+        
+        // For the hero, the facing property is top-level; for the knight, it's on the object itself.
+        if (character === this.hero) {
+            this.facing = direction;
+        } else {
+            character.facing = direction;
+            
+            // OMINOUS MARCHING: Purple knight always faces and slowly approaches hero
+            if (character === this.purpleKnight && character.ominousMarchEnabled) {
+                this.executeOminousMarch(character, opponent);
+                return; // Skip normal idle logic
+            }
+        }
+
+        if (character.isBlocking) {
+            // If the block animation isn't already playing, start it.
+            if (!character.anims.currentAnim || !character.anims.currentAnim.key.startsWith('shield-block-mid-')) {
+                character.anims.play(`shield-block-mid-${direction}`, true);
+            }
+        } else {
+            // If not blocking and not moving via AI, play the idle animation.
+             if (character.body.velocity.x === 0 && character.body.velocity.y === 0) {
+                character.anims.play(`idle-${direction}`, true);
+            }
+        }
+    }
+
+    executeOminousMarch(knight, hero) {
+        // Calculate distance and angle to hero
+        const distance = Phaser.Math.Distance.Between(knight.x, knight.y, hero.x, hero.y);
+        const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, hero.x, hero.y);
+        const direction = this.getDirectionFromAngle(angleToHero);
+        
+        // ALWAYS face the hero - this is critical for menacing effect
+        knight.facing = direction;
+        
+        // Only march if not too close (maintain menacing distance but always approach)
+        if (distance > 70) {
+            // Slow, ominous approach - like a horror movie villain
+            const marchSpeed = knight.marchSpeed * (1 + knight.aggressionLevel / 200); // Slightly faster with aggression
+            const moveVector = new Phaser.Math.Vector2(Math.cos(angleToHero), Math.sin(angleToHero)).scale(marchSpeed);
+            
+            // Set as non-static temporarily for movement
+            knight.setStatic(false);
+            knight.setVelocity(moveVector.x, moveVector.y);
+            knight.intentionalMovement = true; // Mark as intentional movement
+            
+            // Play slow walk animation for ominous effect
+            const walkAnimKey = `walk-${direction}`;
+            if (knight.anims.currentAnim?.key !== walkAnimKey) {
+                knight.anims.play(walkAnimKey, true);
+                // Use consistent animation speed - don't override msPerFrame
+            }
+        } else {
+            // Stop when close, but keep staring menacingly
+            knight.setVelocity(0, 0);
+            knight.setStatic(true);
+            knight.intentionalMovement = false; // Clear intentional movement flag
+            
+            // Menacing idle stare
+            const idleAnimKey = `idle-${direction}`;
+            if (knight.anims.currentAnim?.key !== idleAnimKey) {
+                knight.anims.play(idleAnimKey, true);
+                // Use consistent animation speed - don't override msPerFrame
+            }
         }
     }
 
     update(time, delta) {
-        
+        if (this.gameOverActive) {
+            return; // Automatic restart is handled by showGameOverScreen
+        }
 
-        if (time - this.lastScreenshotTime > this.screenshotInterval) {
+        // --- Data Collection ---
+        if (time - (this.lastScreenshotTime || 0) > this.screenshotInterval) {
             this.takeScreenshot();
             this.lastScreenshotTime = time;
         }
 
-        if (this.gameOverActive) {
-            if (Phaser.Input.Keyboard.JustDown(this.keys.q)) {
-                saveQ();                // persist learning before restart
-                this.scene.restart();
-            }
-            return; // Lock all other updates
-        }
-
-        if (this.isDeathSequenceActive) {
-            this.hero.setVelocity(0, 0);
-            this.purpleKnight.setVelocity(0, 0);
-            return;
-        }
-
-        // 3.  Small time-penalty every 1000 ms so knight doesn’t idle
-        if (time - this.lastRewardTick > 1000) {
-            this.lastRewardTick = time;
-            if (this.purpleKnight.lastState && this.purpleKnight.lastAction) {
-                const next = this.getKnightState(this.purpleKnight);
-                updateQ(this.purpleKnight.lastState,
-                        this.purpleKnight.lastAction,
-                        -1,   // tiny cost for standing around
-                        next);
-            }
-        }
-
-        // Handle stamina updates for both characters every frame
+        // --- Core Game Loop ---
         this.updateStamina(delta);
 
-        // --- Purple Knight AI with Q-Learning ---
+        // --- AI Decision Making ---
+        this.hero.actionCooldown = (this.hero.actionCooldown || 0) - delta;
+        this.purpleKnight.actionCooldown = (this.purpleKnight.actionCooldown || 0) - delta;
+        
+        // Hero AI Tick
+        if (this.hero.actionCooldown <= 0 && !this.hero.isDead) {
+            const heroState = this.getHeroState();
+            
+            // --- HERO DISTANCE CLOSING PRIORITY SYSTEM ---
+            // Penalize hero for being far from knight and not moving closer
+            if (this.hero.lastState && heroState.distBin === 'far') {
+                // Check if hero took a distance-closing action
+                const isMovingTowardKnight = this.hero.lastAction?.startsWith('move_') && this.isMovingTowardTarget(this.hero.lastAction, this.hero, this.purpleKnight);
+                if (!isMovingTowardKnight && !this.hero.lastAction?.startsWith('attack_')) {
+                    this.heroAgent.updateQ(this.hero.lastState, this.hero.lastAction, -25, heroState); // Penalty for not closing distance when far
+                }
+                // Additional distance penalty
+                this.heroAgent.updateQ(this.hero.lastState, this.hero.lastAction, -8, heroState);
+            }
+            
+            // Medium distance should prioritize getting closer or attacking
+            if (this.hero.lastState && heroState.distBin === 'medium') {
+                const isAggressiveAction = this.hero.lastAction?.startsWith('attack_') || (this.hero.lastAction?.startsWith('move_') && this.isMovingTowardTarget(this.hero.lastAction, this.hero, this.purpleKnight));
+                if (!isAggressiveAction) {
+                    this.heroAgent.updateQ(this.hero.lastState, this.hero.lastAction, -12, heroState); // Penalty for passive actions at medium range
+                }
+            }
+            
+            this.hero.lastState = heroState; // Store state
+            let heroAction = this.heroAgent.chooseAction(heroState);
+            
+            // ENHANCE HERO ACTION SELECTION - Bias toward distance closing
+            if (heroState.distBin === 'far' && Math.random() < 0.6) { // 60% chance to override with movement toward knight
+                heroAction = this.getBestMovementTowardTarget(this.hero, this.purpleKnight);
+            } else if (heroState.distBin === 'medium' && Math.random() < 0.4) { // 40% chance to move closer or attack
+                if (Math.random() < 0.7) {
+                    heroAction = this.getBestMovementTowardTarget(this.hero, this.purpleKnight);
+                } else {
+                    heroAction = Math.random() < 0.5 ? 'attack_melee' : 'attack_melee2';
+                }
+            }
+            
+            // REWARD SYSTEM for hero distance-closing actions
+            if (heroAction.startsWith('move_') && this.isMovingTowardTarget(heroAction, this.hero, this.purpleKnight)) {
+                let reward = 12; // Base reward for moving toward knight
+                if (heroState.distBin === 'far') reward += 15; // Extra reward when far
+                else if (heroState.distBin === 'medium') reward += 10; // Good reward when medium
+                this.heroAgent.updateQ(heroState, heroAction, reward, heroState);
+            } else if (heroAction.startsWith('attack_') && heroState.distBin === 'close') {
+                this.heroAgent.updateQ(heroState, heroAction, 18, heroState); // Big reward for attacking when close
+            }
+            
+            this.hero.lastAction = heroAction; // Store action
+            this.executeHeroAction(heroAction);
+            this.hero.actionCooldown = 80; // Slightly faster for more aggressive behavior
+        }
+
+        // Knight AI Tick - More responsive for combat
+        if (this.purpleKnight.actionCooldown <= 0 && !this.purpleKnight.isDead) {
+            const knightState = this.getKnightState();
+
+            // --- Aggression System Updates ---
+            this.purpleKnight.timeSinceLastAttack += delta;
+            
+            // MUCH faster aggression buildup
+            if (this.purpleKnight.timeSinceLastAttack > 1500) { // Only 1.5 seconds now
+                this.purpleKnight.aggressionLevel = Math.min(this.purpleKnight.maxAggression, 
+                    this.purpleKnight.aggressionLevel + 2); // 4x faster buildup
+            }
+            
+            // Harsher penalty for excessive blocking
+            if (this.purpleKnight.consecutiveBlocks > 2) { // Trigger earlier
+                this.knightAgent.updateQ(this.purpleKnight.lastState, 'block', -25, knightState); // Bigger penalty
+            }
+            
+            // Additional aggression bonus when hero is close but not attacking
+            if (knightState.distBin === 'close' && knightState.heroAction === 'idle') {
+                this.purpleKnight.aggressionLevel = Math.min(this.purpleKnight.maxAggression, 
+                    this.purpleKnight.aggressionLevel + 1);
+            }
+
+            // --- DISTANCE CLOSING PRIORITY SYSTEM ---
+            // MASSIVE penalties for being far away and not approaching
+            if (this.purpleKnight.lastState && knightState.distBin === 'far') {
+                if (this.purpleKnight.lastAction !== 'approach') {
+                    this.knightAgent.updateQ(this.purpleKnight.lastState, this.purpleKnight.lastAction, -30, knightState); // Huge penalty for not approaching when far
+                }
+                // Additional distance penalty - being far is bad
+                this.knightAgent.updateQ(this.purpleKnight.lastState, this.purpleKnight.lastAction, -10, knightState);
+            }
+            
+            // Medium distance should prioritize getting closer or lunging
+            if (this.purpleKnight.lastState && knightState.distBin === 'medium') {
+                if (!['approach', 'lunge_left', 'lunge_right', 'attack'].includes(this.purpleKnight.lastAction)) {
+                    this.knightAgent.updateQ(this.purpleKnight.lastState, this.purpleKnight.lastAction, -15, knightState); // Penalty for passive actions at medium range
+                }
+            }
+            
+            // STRONG penalty for idle behavior - encourage action
+            if (this.purpleKnight.lastAction === 'idle') {
+                let idlePenalty = -40; // Increased base idle penalty
+                
+                // Increase penalty based on distance - farther = worse
+                if (knightState.distBin === 'far') idlePenalty = -60; // Massive penalty when far and idle
+                else if (knightState.distBin === 'medium') idlePenalty = -50; // Heavy penalty at medium distance
+                else if (knightState.distBin === 'close') idlePenalty = -45; // Still heavy penalty when close
+                
+                this.knightAgent.updateQ(this.purpleKnight.lastState, 'idle', idlePenalty, knightState);
+            }
+            // --- End Penalties ---
+
+            this.purpleKnight.lastState = knightState; // Store state
+            let knightAction = this.knightAgent.chooseAction(knightState);
+            
+            // ELIMINATE IDLE: Always override idle actions with aggressive alternatives
+            if (knightAction === 'idle') {
+                const nonIdleActions = KNIGHT_ACTIONS.filter(action => action !== 'idle');
+                knightAction = nonIdleActions[Math.floor(Math.random() * nonIdleActions.length)];
+                
+                // Apply immediate penalty for even attempting to idle
+                this.knightAgent.updateQ(knightState, 'idle', -50, knightState);
+            }
+            
+            this.purpleKnight.lastAction = knightAction; // Store action
+            
+            // ENHANCED REWARD SYSTEM - Prioritize distance closing
+            if (knightAction !== 'idle' && knightAction !== 'block') {
+                let actionReward = 8; // Increased base reward for taking action
+                
+                // MASSIVE bonuses for distance-closing actions
+                if (knightAction === 'approach') {
+                    if (knightState.distBin === 'far') actionReward += 20; // Huge reward for approaching when far
+                    else if (knightState.distBin === 'medium') actionReward += 15; // Good reward for approaching when medium
+                    else actionReward += 10; // Still good when close
+                }
+                
+                if (knightAction === 'attack' && knightState.distBin === 'close') actionReward += 15; // Big reward for attacking when close
+                
+                if ((knightAction === 'lunge_left' || knightAction === 'lunge_right')) {
+                    if (knightState.distBin === 'medium') actionReward += 12; // Good reward for lunging at medium distance
+                    else if (knightState.distBin === 'far') actionReward += 8; // Some reward for lunging when far
+                }
+                
+                // Apply the reward immediately for taking action
+                this.knightAgent.updateQ(knightState, knightAction, actionReward, knightState);
+            }
+            
+            this.executeKnightAction(knightAction);
+            
+            // Aggressive knights act faster - scale cooldown based on aggression
+            const baseCooldown = 50;
+            const aggressionSpeedup = Math.max(0.3, 1 - (this.purpleKnight.aggressionLevel / 300));
+            this.purpleKnight.actionCooldown = baseCooldown * aggressionSpeedup;
+        }
+
+                // --- Handle Knight's Ongoing Movement ---
         const knight = this.purpleKnight;
-        if (knight.active) {
-            if (knight.isDead) {
-                return;
-            }
+        if (knight.currentMovement && knight.movementDuration > 0) {
+            knight.movementDuration -= delta;
             
-            const knightAnim = knight.anims.currentAnim;
-            const isKnightInAction = (knightAnim && (knightAnim.key.startsWith('take-damage-') || knightAnim.key.startsWith('shield-block-'))) || knight.isTakingDamage || knight.isAttacking || knight.isRecovering;
+            if (knight.currentMovement === 'approach') {
+                const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+                const direction = this.getDirectionFromAngle(angleToHero);
+                knight.facing = direction; // ALWAYS update facing during movement
+                const knightSpeed = 5;
 
-            // Update action cooldown
-            if (knight.actionCooldown > 0) {
-                knight.actionCooldown -= delta;
+                const moveVector = new Phaser.Math.Vector2(Math.cos(angleToHero), Math.sin(angleToHero)).scale(knightSpeed);
+                knight.setStatic(false);
+                knight.setVelocity(moveVector.x, moveVector.y);
+                
+                // Mark that this is intentional movement to prevent anti-push system interference
+                knight.intentionalMovement = true;
+
+                const walkAnimKey = `walk-${direction}`;
+                if (knight.anims.currentAnim?.key !== walkAnimKey) {
+                    knight.anims.play(walkAnimKey, true);
+                }
+            } else if (knight.currentMovement.startsWith('lunge')) {
+                const lungeSpeed = 4;
+                const moveVector = new Phaser.Math.Vector2(Math.cos(knight.movementAngle), Math.sin(knight.movementAngle)).scale(lungeSpeed);
+                knight.setStatic(false);
+                knight.setVelocity(moveVector.x, moveVector.y);
+                
+                // Mark that this is intentional movement
+                knight.intentionalMovement = true;
+                
+                const rollAnimKey = `rolling-${knight.movementDirection}`;
+                if (knight.anims.currentAnim?.key !== rollAnimKey) {
+                    knight.anims.play(rollAnimKey, true);
+                }
             }
+
+            if (knight.movementDuration <= 0) {
+                knight.currentMovement = null;
+                knight.intentionalMovement = false; // Clear intentional movement flag
+                knight.setVelocity(0, 0);
+                knight.setStatic(true);
+
+                // Ensure we face the hero when movement ends
+                const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+                const direction = this.getDirectionFromAngle(angleToHero);
+                knight.facing = direction;
+
+                // Explicitly stop the current animation and switch to idle.
+                const idleAnimKey = `idle-${direction}`;
+                if (knight.anims.currentAnim?.key !== idleAnimKey) {
+                    knight.anims.play(idleAnimKey, true);
+                }
+            }
+        }
+        // --- ALWAYS Ensure Purple Knight Faces Hero ---
+        // This overrides any other facing logic to guarantee knight always looks at hero
+        if (!this.purpleKnight.isDead && !this.hero.isDead) {
+            const angleToHero = Phaser.Math.Angle.Between(this.purpleKnight.x, this.purpleKnight.y, this.hero.x, this.hero.y);
+            const direction = this.getDirectionFromAngle(angleToHero);
+            this.purpleKnight.facing = direction;
             
-            // Update movement duration and handle ongoing movement
-            if (knight.currentMovement && knight.movementDuration > 0) {
-                knight.movementDuration -= delta;
+            // If knight is not performing an action animation, ensure it shows the correct facing idle
+            if (!this.isActionInProgress(this.purpleKnight) && !this.purpleKnight.currentMovement) {
+                const currentAnimKey = this.purpleKnight.anims.currentAnim?.key;
+                const expectedIdleKey = `idle-${direction}`;
                 
-                // Use stored movement direction and angle (don't recalculate)
-                if (knight.currentMovement === 'approach') {
-                    // Check distance to player to prevent overshooting
-                    const currentDistance = Phaser.Math.Distance.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-                    
-                    if (currentDistance > 70) { // Safe distance to continue moving
-                        const knightSpeed = Math.min(2, (currentDistance - 60) / 10); // Slow down as getting closer
-                        const moveVector = new Phaser.Math.Vector2(
-                            Math.cos(knight.movementAngle) * knightSpeed,
-                            Math.sin(knight.movementAngle) * knightSpeed
-                        );
-                        knight.setStatic(false); // Allow movement temporarily
-                        knight.body.collisionFilter.mask = 0x0004; // Only collide with walls, not hero
-                        knight.setVelocity(moveVector.x, moveVector.y);
-                        knight.anims.play(`walk-${knight.movementDirection}`, true);
-                    } else {
-                        knight.movementDuration = 0; // Force stop
-                    }
-                } else if (knight.currentMovement === 'lunge_left') {
-                    const lungeSpeed = 4;
-                    const leftVector = new Phaser.Math.Vector2(
-                        Math.cos(knight.movementAngle) * lungeSpeed,
-                        Math.sin(knight.movementAngle) * lungeSpeed
-                    );
-                    knight.setStatic(false);
-                    knight.body.collisionFilter.mask = 0x0004;
-                    knight.setVelocity(leftVector.x, leftVector.y);
-                    if (!knight.anims.isPlaying || !knight.anims.currentAnim.key.startsWith('rolling-')) {
-                        knight.anims.play(`rolling-${knight.movementDirection}`, true);
-                    }
-                } else if (knight.currentMovement === 'lunge_right') {
-                    const lungeSpeed = 4;
-                    const rightVector = new Phaser.Math.Vector2(
-                        Math.cos(knight.movementAngle) * lungeSpeed,
-                        Math.sin(knight.movementAngle) * lungeSpeed
-                    );
-                    knight.setStatic(false);
-                    knight.body.collisionFilter.mask = 0x0004;
-                    knight.setVelocity(rightVector.x, rightVector.y);
-                    if (!knight.anims.isPlaying || !knight.anims.currentAnim.key.startsWith('rolling-')) {
-                        knight.anims.play(`rolling-${knight.movementDirection}`, true);
-                    }
-                }
-                
-                if (knight.movementDuration <= 0) {
-                    knight.currentMovement = null;
-                    knight.setVelocity(0, 0);
-                    knight.setStatic(true);
-                    knight.body.collisionFilter.mask = 0x0005;
-                    const currentAngle = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-                    const currentDirection = this.getDirectionFromAngle(currentAngle);
-                    knight.facing = currentDirection;
-                    knight.anims.play(`idle-${currentDirection}`, true);
-                }
-            }
-
-            if (!isKnightInAction && knight.actionCooldown <= 0 && !knight.currentMovement && knight.staminaRegenDelay <= 0) {
-                const prevState = this.getKnightState(knight);
-                const prevAction = chooseAction(prevState);
-                const ctx = { action: prevAction };
-                
-                this.executeKnightAction(knight, ctx);
-                this.logEvt(knight, prevAction);
-                
-                if (prevAction === 'attack') {
-                    knight.actionCooldown = 800;
-                } else {
-                    knight.actionCooldown = 200;
-                }
-            }
-        }
-
-        if (this.redBoundaries && this.redBoundaries.visible) {
-            this.redBoundaries.clear();
-            this.redBoundaries.lineStyle(2, 0xff0000, 0.8);
-            this.boundaryRects.forEach(r => {
-                this.redBoundaries.strokeRect(r.x, r.y, r.w, r.h);
-            });
-            // Draw knight collision circle
-            this.redBoundaries.strokeCircle(this.purpleKnight.x, this.purpleKnight.y, 42);
-            // Draw hero collision circle  
-            this.redBoundaries.strokeCircle(this.hero.x, this.hero.y, 42);
-        }
-        if (this.blueBoundaries && this.blueBoundaries.visible) {
-            this.blueBoundaries.clear();
-            this.blueBoundaries.lineStyle(2, 0x0000ff, 0.8);
-            const heroCenterX = this.hero.x;
-            const heroCenterY = this.hero.y;
-            const heroRadius = 42;
-            this.blueBoundaries.strokeCircle(heroCenterX, heroCenterY, heroRadius);
-            for (let i = 0; i < 8; i++) {
-                const angle = i * 45;
-                const rad = Phaser.Math.DegToRad(angle);
-                const endX = heroCenterX + heroRadius * Math.cos(rad);
-                const endY = heroCenterY + heroRadius * Math.sin(rad);
-                this.blueBoundaries.beginPath();
-                this.blueBoundaries.moveTo(heroCenterX, heroCenterY);
-                this.blueBoundaries.lineTo(endX, endY);
-                this.blueBoundaries.strokePath();
-            }
-        }
-        if (this.greenBoundaries && this.greenBoundaries.visible) {
-            this.greenBoundaries.clear();
-            this.greenBoundaries.lineStyle(2, 0x00ff00, 0.8);
-            const knightCenterX = this.purpleKnight.x;
-            const knightCenterY = this.purpleKnight.y;
-            const knightRadius = 42;
-            this.greenBoundaries.strokeCircle(knightCenterX, knightCenterY, knightRadius);
-            for (let i = 0; i < 8; i++) {
-                const angle = i * 45;
-                const rad = Phaser.Math.DegToRad(angle);
-                const endX = knightCenterX + knightRadius * Math.cos(rad);
-                const endY = knightCenterY + knightRadius * Math.sin(rad);
-                this.greenBoundaries.beginPath();
-                this.greenBoundaries.moveTo(knightCenterX, knightCenterY);
-                this.greenBoundaries.lineTo(endX, endY);
-                this.greenBoundaries.strokePath();
-            }
-        }
-
-        // --- Hero Input & Movement ---
-        const { left, right, up, down, space, m, r, k, n, s, b, f, c } = this.keys;
-        
-        // Xbox controller input
-        let gamepadInput = {
-            left: false, right: false, up: false, down: false,
-            space: false, attack: false, melee2: false, special1: false, 
-            block: false, frontFlip: false
-        };
-        
-        // Try to detect gamepad during gameplay using native API
-        if (!this.gamepad && navigator.getGamepads) {
-            const gamepads = navigator.getGamepads();
-            for (let i = 0; i < gamepads.length; i++) {
-                if (gamepads[i] && gamepads[i].connected) {
-                    this.gamepad = gamepads[i];
-                    this.logEvt(this.hero, 'controller_detected_runtime');
-                    break;
+                if (currentAnimKey !== expectedIdleKey) {
+                    this.purpleKnight.anims.play(expectedIdleKey, true);
                 }
             }
         }
         
-        // Use native gamepad API for input
-        if (this.gamepad && this.gamepad.connected) {
-            // Get fresh gamepad state (required for native API)
-            const freshGamepads = navigator.getGamepads();
-            const pad = freshGamepads[this.gamepad.index];
-            
-            if (pad) {
-                // Left stick for movement (axes 0 and 1)
-                const leftStickX = pad.axes[0];
-                const leftStickY = pad.axes[1];
-                const deadzone = 0.3;
-                
-                if (leftStickX < -deadzone) gamepadInput.left = true;
-                if (leftStickX > deadzone) gamepadInput.right = true;
-                if (leftStickY < -deadzone) gamepadInput.up = true;
-                if (leftStickY > deadzone) gamepadInput.down = true;
-                
-                // Button mappings (Xbox controller - new layout)
-                gamepadInput.frontFlip = pad.buttons[0].pressed; // A button - dodge (front flip)
-                gamepadInput.block = pad.buttons[1].pressed; // B button - block
-                gamepadInput.attack = pad.buttons[2].pressed; // X button - melee
-                gamepadInput.melee2 = pad.buttons[3].pressed; // Y button - melee2
-                gamepadInput.special1 = pad.buttons[7].pressed; // RT - special1
-                gamepadInput.space = pad.buttons[4].pressed; // LB (Left Shoulder) - run
-                
-
-            }
-        }
-
-        if (this.hero.isAttacking) {
-            this.hero.setVelocity(0, 0); // Ensure no movement during attack
-            return;
-        }
+        // --- Character Idle & Tracking ---
+        this.handleIdleAndTracking(this.hero, this.purpleKnight);
+        // Skip normal tracking for purple knight since we handle it above
         
-        const currentAnim = this.hero.anims.currentAnim;
-        const isBlocking = currentAnim && (currentAnim.key.startsWith('shield-block-start-') || currentAnim.key.startsWith('shield-block-mid-'));
-        const isActionInProgress = this.hero.isAttacking || (currentAnim && (currentAnim.key.startsWith('melee-') || currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('take-damage-') || currentAnim.key.startsWith('kick-') || currentAnim.key.startsWith('melee2-') || currentAnim.key.startsWith('special1-') || currentAnim.key.startsWith('front-flip-')) && this.hero.anims.isPlaying);
-
-        if (isBlocking) {
-            this.hero.setVelocity(0, 0);
-            if (b.isUp && !gamepadInput.block) {
-                this.hero.isBlocking = false;
-                this.hero.anims.play(`idle-${this.facing}`, true);
+        // --- Anti-Gliding Safety Check ---
+        // Ensure knight is properly static when not moving
+        if (!this.purpleKnight.currentMovement && !this.purpleKnight.ominousMarchEnabled) {
+            if (!this.purpleKnight.body.isStatic) {
+                this.purpleKnight.setVelocity(0, 0);
+                this.purpleKnight.setStatic(true);
             }
-            return;
         }
-
-        if (isActionInProgress) {
-            if (currentAnim.key.startsWith('rolling-') || currentAnim.key.startsWith('front-flip-')) {
-                const moveVelocity = new Phaser.Math.Vector2();
-                switch (this.facing) {
-                    case 'n': moveVelocity.y = -1; break;
-                    case 's': moveVelocity.y = 1; break;
-                    case 'w': moveVelocity.x = -1; break;
-                    case 'e': moveVelocity.x = 1; break;
-                    case 'nw': moveVelocity.set(-1, -1); break;
-                    case 'ne': moveVelocity.set(1, -1); break;
-                    case 'sw': moveVelocity.set(-1, 1); break;
-                    case 'se': moveVelocity.set(1, 1); break;
-                }
-                const speed = currentAnim.key.startsWith('rolling-') ? 8 : 6; // Matter physics scaling
-                moveVelocity.normalize().scale(speed);
-                this.hero.setVelocity(moveVelocity.x, moveVelocity.y);
-            } else {
-                this.hero.setVelocity(0, 0);
-            }
-            return;
-        }
-
-        // Handle actions (keyboard + gamepad with native API)
-        const currentGamepadState = this.gamepad ? {
-            attack: gamepadInput.attack,
-            melee2: gamepadInput.melee2,
-            special1: gamepadInput.special1,
-            frontFlip: gamepadInput.frontFlip,
-            block: gamepadInput.block
-        } : {};
-
-        if (Phaser.Input.Keyboard.JustDown(f) || (gamepadInput.frontFlip && !this.lastGamepadState?.frontFlip)) {
-            // Check stamina for dodge
-            if (this.hero.stamina >= 30) {
-                this.hero.stamina -= 30;
-                this.hero.anims.play(`front-flip-${this.facing}`, true);
-                this.logEvt(this.hero, 'front_flip');
-            }
-            return;
-        }
-
-        if (Phaser.Input.Keyboard.JustDown(b) || (gamepadInput.block && !this.lastGamepadState?.block)) {
-            // Check if blocking is disabled due to stamina exhaustion
-            if (this.hero.blockDisabled) {
-                return;
-            }
-            this.hero.setVelocity(0, 0);
-            this.hero.isBlocking = true;
-            this.hero.anims.play(`shield-block-start-${this.facing}`, true);
-            this.logEvt(this.hero, 'block');
-            return;
-        }
-        
-        if (Phaser.Input.Keyboard.JustDown(m) || (gamepadInput.attack && !this.lastGamepadState?.attack)) {
-            this.performAttack(this.hero, 'melee');
-            return;
-        }
-
-        if (Phaser.Input.Keyboard.JustDown(n) || (gamepadInput.melee2 && !this.lastGamepadState?.melee2)) {
-            this.performAttack(this.hero, 'melee2');
-            return;
-        }
-
-        if (Phaser.Input.Keyboard.JustDown(c) || (gamepadInput.special1 && !this.lastGamepadState?.special1)) {
-            this.performAttack(this.hero, 'special1');
-            return;
-        }
-
-
-        const velocity = new Phaser.Math.Vector2();
-
-        // --- Determine direction from key presses ---
-        let direction = this.facing;
-        // Consider both keyboard and gamepad for direction
-        const upPressed = up.isDown || gamepadInput.up;
-        const downPressed = down.isDown || gamepadInput.down;
-        const leftPressed = left.isDown || gamepadInput.left;
-        const rightPressed = right.isDown || gamepadInput.right;
-        
-        if (upPressed) {
-            if (leftPressed) direction = 'nw';
-            else if (rightPressed) direction = 'ne';
-            else direction = 'n';
-        } else if (downPressed) {
-            if (leftPressed) direction = 'sw';
-            else if (rightPressed) direction = 'se';
-            else direction = 's';
-        } else if (leftPressed) {
-            direction = 'w';
-        } else if (rightPressed) {
-            direction = 'e';
-        }
-
-        // --- Set velocity based on keys pressed or gamepad ---
-        if (leftPressed) velocity.x = -1;
-        else if (rightPressed) velocity.x = 1;
-        if (upPressed) velocity.y = -1;
-        else if (downPressed) velocity.y = 1;
-        
-        // --- Play animations and log movement ---
-        if (velocity.length() > 0) {
-            this.facing = direction;
-
-            const isRunning = space.isDown || gamepadInput.space;
-            const currentSpeed = isRunning ? 5 : 3; // Matter physics scaling
-            velocity.normalize().scale(currentSpeed);
-            const animPrefix = isRunning ? 'run' : 'walk';
-            
-            // Running stamina cost
-            if (isRunning) {
-                if (this.hero.stamina > 0) {
-                    this.hero.stamina -= 0.5; // Drain stamina while running
-                } else {
-                    // Force walking if no stamina
-                    const currentSpeed = 3;
-                    velocity.normalize().scale(currentSpeed);
-                    const animPrefix = 'walk';
-                }
-            }
-            
-            this.hero.anims.play(`${animPrefix}-${this.facing}`, true);
-            
-            // Log movement (throttled to avoid spam)
-            if (!this.lastMoveLog || this.time.now - this.lastMoveLog > 500) {
-                this.logEvt(this.hero, isRunning ? 'running' : 'walking');
-                this.lastMoveLog = this.time.now;
-            }
-        } else {
-            this.hero.anims.play(`idle-${this.facing}`, true);
-        }
-
-        this.hero.setVelocity(velocity.x, velocity.y);
         
         // Ensure no visual rotation
         this.hero.setRotation(0);
         this.purpleKnight.setRotation(0);
-        
-        // Update external debug panel with latest AI metrics
-        const last = this.aiLog[this.aiLog.length-1]||{};
-        if (last.state) {
-            document.getElementById('debug-state').textContent = `${last.state.distBin}-${last.state.playerDir}`;
-            document.getElementById('debug-action').textContent = last.action || '-';
-            document.getElementById('debug-cooldown').textContent = `${Math.round(this.purpleKnight.actionCooldown)}ms`;
-            
-            if (last.q) {
-                document.getElementById('debug-q-attack').textContent = last.q.attack?.toFixed(2) || '0';
-                document.getElementById('debug-q-approach').textContent = last.q.approach?.toFixed(2) || '0';
-                document.getElementById('debug-q-lunge-left').textContent = last.q.lunge_left?.toFixed(2) || '0';
-                document.getElementById('debug-q-lunge-right').textContent = last.q.lunge_right?.toFixed(2) || '0';
-            }
-            
-            document.getElementById('debug-total-states').textContent = Object.keys(Q).length;
-            const hitRate = this.totalActions > 0 ? ((this.hitCount / this.totalActions) * 100).toFixed(1) : '0';
-            document.getElementById('debug-hit-rate').textContent = `${hitRate}%`;
-            
-            // Update Q-value bar chart in HTML
-            const row = Q[key(last.state)] || {attack:0,approach:0, lunge_left:0,lunge_right:0};
-            const maxWidth = 200;
-            const minWidth = 10;
-            document.getElementById('q-bar-attack').style.width = Math.max(minWidth, Math.min(maxWidth, row.attack * 20 + 10)) + 'px';
-            document.getElementById('q-bar-approach').style.width = Math.max(minWidth, Math.min(maxWidth, row.approach * 20 + 10)) + 'px';
-            document.getElementById('q-bar-lunge-left').style.width = Math.max(minWidth, Math.min(maxWidth, row.lunge_left * 20 + 10)) + 'px';
-            document.getElementById('q-bar-lunge-right').style.width = Math.max(minWidth, Math.min(maxWidth, row.lunge_right * 20 + 10)) + 'px';
-        }
-        
-        // Stamina regeneration
-        this.updateStamina(delta);
-        
-        // Store gamepad state for next frame comparison (native API)
-        if (this.gamepad) {
-            this.lastGamepadState = {
-                attack: gamepadInput.attack,
-                melee2: gamepadInput.melee2,
-                special1: gamepadInput.special1,
-                frontFlip: gamepadInput.frontFlip,
-                block: gamepadInput.block
-            };
-        }
-
-        // Update player action debug info (safe version)
-        try {
-            this.updatePlayerDebugInfo();
-        } catch (e) {
-        }
     }
 
     updateStamina(delta) {
@@ -1973,39 +2159,65 @@ class PlayScene extends Phaser.Scene {
 
 
     takeScreenshot() {
+        // Exit if the game is over
+        if (this.gameOverActive) {
+            return;
+        }
+
         const mainCanvas = this.game.canvas;
         const screenshotCanvas = document.getElementById('screenshot-canvas');
 
         if (!screenshotCanvas) {
-    
             return;
         }
 
+        // 1. Capture screenshot
         screenshotCanvas.width = mainCanvas.width;
         screenshotCanvas.height = mainCanvas.height;
-
         const context = screenshotCanvas.getContext('2d');
         context.drawImage(mainCanvas, 0, 0, mainCanvas.width, mainCanvas.height);
-
         const imageData = screenshotCanvas.toDataURL('image/png');
-        const metadata = {
-            player: {
+
+        // 2a. Create event snapshot for the Hero
+        const heroState = {
+            t: this.time.now,
+            actor: this.hero.label,
+            pos: [this.hero.x, this.hero.y],
+            dir: this.directionMap.get(this.facing),
                 hp: this.hero.health / this.hero.maxHealth,
-                animation: this.hero.anims.currentAnim ? this.hero.anims.currentAnim.key : 'none'
-            },
-            enemy: {
-                hp: this.purpleKnight.health / this.purpleKnight.maxHealth,
-                animation: this.purpleKnight.anims.currentAnim ? this.purpleKnight.anims.currentAnim.key : 'none'
-            }
+            stamina: this.hero.stamina / this.hero.maxStamina,
+            action: (this.hero.anims.currentAnim ? this.hero.anims.currentAnim.key : 'idle')
         };
 
-        if (this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: 'screenshot',
+        // 2b. Create event snapshot for the Purple Knight
+        const knightState = {
+            t: this.time.now,
+            actor: this.purpleKnight.label,
+            pos: [this.purpleKnight.x, this.purpleKnight.y],
+            dir: this.directionMap.get(this.purpleKnight.facing),
+                hp: this.purpleKnight.health / this.purpleKnight.maxHealth,
+            stamina: this.purpleKnight.stamina / this.purpleKnight.maxStamina,
+            action: (this.purpleKnight.anims.currentAnim ? this.purpleKnight.anims.currentAnim.key : 'idle')
+        };
+
+        // 3. Package everything into a single payload
+        const payload = {
+            type: 'game_state_snapshot',
                 image: imageData,
-                metadata: metadata
-            }));
-        }
+            hero_state: heroState,
+            knight_state: knightState
+        };
+
+        // 4. Send the payload to the backend API via HTTP POST
+        fetch('http://localhost:8765/game_state_snapshot', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        }).catch(error => {
+            console.error('Failed to send game state snapshot:', error);
+        });
     }
 }
 
