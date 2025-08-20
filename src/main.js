@@ -714,60 +714,46 @@ class PlayScene extends Phaser.Scene {
     }
 
     animateKnightHealthBarDamage(target, oldHealth) {
-        // Fallback: immediately update health bar if animation system fails
+        // Simple smooth reduction without flashing
         if (!this.tweens) {
-    
             this.updateKnightHealthBar();
             return;
         }
         
-        // Create a temporary "damage flash" effect
         const x = this.game.config.width / 2 - 100;
-        const y = this.game.config.height - 50;
+        const y = this.game.config.height - 60;
         const w = 200;
-        const h = 20;
+        const h = 25;
         
-        // Flash the knight health bar white briefly
-        if (this.knightHealthFlash) this.knightHealthFlash.destroy();
-        this.knightHealthFlash = this.add.graphics().setScrollFactor(0).setDepth(103);
-        this.knightHealthFlash.fillStyle(0xffffff, 0.7);
-        this.knightHealthFlash.fillRect(x, y, w, h);
-        
-        // Animate the health bar dropping from old to new value
+        // Animate the health bar dropping from old to new value smoothly
         const startHealthWidth = (oldHealth / this.purpleKnight.maxHealth) * w;
         const endHealthWidth = (target.health / this.purpleKnight.maxHealth) * w;
         
-
-        
-        // Tween the health bar width
+        // Smooth transition without flash
         this.tweens.add({
             targets: { width: startHealthWidth },
             width: endHealthWidth,
-            duration: 300,
-            ease: 'Power2',
+            duration: 200, // Faster, smoother transition
+            ease: 'Power1', // Smoother easing
             onUpdate: (tween) => {
                 const currentWidth = tween.targets[0].width;
                 this.knightHealthBar.clear();
-                this.knightHealthBar.fillStyle(0x9400D3);
-                this.knightHealthBar.fillRect(x, y, Math.max(0, currentWidth), h);
+                
+                const healthPercentage = Math.max(0, currentWidth / w);
+                
+                if (currentWidth > 0) {
+                    // Main Bar
+                    this.knightHealthBar.fillStyle(0x9400D3);
+                    this.knightHealthBar.fillRect(x, y, currentWidth, h);
+                    // Top Highlight
+                    this.knightHealthBar.fillStyle(0xC8A2C8);
+                    this.knightHealthBar.fillRect(x, y, currentWidth, h * 0.25);
+                }
             },
             onComplete: () => {
-
- // Ensure final state is correct
+                // Ensure final state matches the standard health bar
+                this.updateKnightHealthBar();
             }
-        });
-        
-        // Remove the flash effect
-        this.time.delayedCall(100, () => {
-            if (this.knightHealthFlash) {
-                this.knightHealthFlash.destroy();
-                this.knightHealthFlash = null;
-            }
-        });
-        
-        // Fallback: update directly after a delay if animation fails
-        this.time.delayedCall(400, () => {
-            this.updateKnightHealthBar();
         });
     }
 
