@@ -1285,9 +1285,20 @@ class PlayScene extends Phaser.Scene {
         // Determine the correct facing direction for the victor's animation.
         const victorFacing = (victor === this.hero) ? this.facing : victor.facing;
 
-        // Play the final animations.
+        // Play the final animations with extra safety checks
         victor.anims.play(`unsheath-${victorFacing}`, true);
+        
+        // Ensure death animation starts and track it
+        console.log(`Starting death animation for ${loser.label}`);
         loser.anims.play('die', true);
+        
+        // Verify the animation is actually playing
+        this.time.delayedCall(50, () => {
+            if (loser.anims.currentAnim?.key !== 'die') {
+                console.warn(`Death animation didn't start properly, forcing it for ${loser.label}`);
+                loser.anims.play('die', true);
+            }
+        });
 
         // When the death animation completes, end the game.
         // Add a backup timer in case animation doesn't complete
@@ -2030,21 +2041,25 @@ class PlayScene extends Phaser.Scene {
                 knight.setVelocity(0, 0);
                 knight.setStatic(true);
 
-                // Ensure we face the hero when movement ends
-                const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
-                const direction = this.getDirectionFromAngle(angleToHero);
-                knight.facing = direction;
+                // Only update facing and animations if not in death sequence
+                if (!this.isDeathSequenceActive && !knight.isDead) {
+                    // Ensure we face the hero when movement ends
+                    const angleToHero = Phaser.Math.Angle.Between(knight.x, knight.y, this.hero.x, this.hero.y);
+                    const direction = this.getDirectionFromAngle(angleToHero);
+                    knight.facing = direction;
 
-                // Explicitly stop the current animation and switch to idle.
-                const idleAnimKey = `idle-${direction}`;
-                if (knight.anims.currentAnim?.key !== idleAnimKey) {
-                    knight.anims.play(idleAnimKey, true);
+                    // Explicitly stop the current animation and switch to idle.
+                    const idleAnimKey = `idle-${direction}`;
+                    if (knight.anims.currentAnim?.key !== idleAnimKey) {
+                        knight.anims.play(idleAnimKey, true);
+                    }
                 }
             }
         }
         // --- ALWAYS Ensure Purple Knight Faces Hero ---
         // This overrides any other facing logic to guarantee knight always looks at hero
-        if (!this.purpleKnight.isDead && !this.hero.isDead) {
+        // BUT ONLY if neither character is dead or in death sequence
+        if (!this.purpleKnight.isDead && !this.hero.isDead && !this.isDeathSequenceActive) {
             const angleToHero = Phaser.Math.Angle.Between(this.purpleKnight.x, this.purpleKnight.y, this.hero.x, this.hero.y);
             const direction = this.getDirectionFromAngle(angleToHero);
             this.purpleKnight.facing = direction;
@@ -2054,14 +2069,20 @@ class PlayScene extends Phaser.Scene {
                 const currentAnimKey = this.purpleKnight.anims.currentAnim?.key;
                 const expectedIdleKey = `idle-${direction}`;
                 
-                if (currentAnimKey !== expectedIdleKey) {
+                // CRITICAL: Don't override death animation or any unsheath animations
+                if (currentAnimKey !== expectedIdleKey && 
+                    currentAnimKey !== 'die' && 
+                    !currentAnimKey?.startsWith('unsheath-')) {
                     this.purpleKnight.anims.play(expectedIdleKey, true);
                 }
             }
         }
         
         // --- Character Idle & Tracking ---
-        this.handleIdleAndTracking(this.hero, this.purpleKnight);
+        // Only run idle/tracking logic if no death sequence is active
+        if (!this.isDeathSequenceActive) {
+            this.handleIdleAndTracking(this.hero, this.purpleKnight);
+        }
         // Skip normal tracking for purple knight since we handle it above
         
         // --- Anti-Gliding Safety Check ---
