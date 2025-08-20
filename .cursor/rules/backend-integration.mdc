@@ -1,0 +1,55 @@
+---
+globs: game_event_microservice/*,requirements.txt
+---
+
+# Backend Integration and Data Collection
+
+## FastAPI Microservice
+
+### Core Functionality
+- **Screenshot Storage**: Automatic game state capture
+- **Event Logging**: Combat actions and AI decisions
+- **ChromaDB Integration**: Vector database for semantic search
+- **SentenceTransformer**: Text embedding for game events
+
+### API Endpoints
+- Data collection endpoints for game events
+- Screenshot upload and storage
+- AI training data export
+- Performance metrics gathering
+
+## Data Collection Pipeline
+
+### Game Event Capture
+- Character positions and states
+- AI action selections and Q-values
+- Combat outcomes and damage calculations
+- Animation state changes
+
+### Research Applications
+- **Behavioral Analysis**: AI learning pattern tracking
+- **Performance Metrics**: Combat effectiveness measurement
+- **Strategy Evolution**: Long-term AI behavior changes
+- **Balance Testing**: Character ability effectiveness
+
+## Python Dependencies
+
+### Core Libraries
+- **FastAPI**: Web framework for API endpoints
+- **ChromaDB**: Vector database for semantic search
+- **SentenceTransformer**: Text embedding model
+- **Uvicorn**: ASGI server for FastAPI
+
+### Data Processing
+- Screenshot compression and storage
+- JSON event serialization
+- Vector embedding generation
+- Database indexing and retrieval
+
+## Integration Guidelines
+
+### Frontend-Backend Communication
+- Asynchronous event posting to avoid game lag
+- Batch data transmission for performance
+- Error handling for network failures
+- Local fallback for offline operation

@@ -1,0 +1,32 @@
+---
+alwaysApply: true
+---
+
+# Vibe-Code-Adaptive-Game-AI Project Structure
+
+This project is an advanced AI fighting game built with Phaser 3 featuring two Q-learning AI agents.
+
+## Core Files
+
+- **Main Game Logic**: [src/main.js](mdc:src/main.js) - Contains the PlayScene class with all game mechanics
+- **AI Implementation**: [src/RL.js](mdc:src/RL.js) - Q-learning agent implementation for both characters
+- **Game Entry Point**: [index.html](mdc:index.html) - Main HTML file that loads the game
+- **Dependencies**: [package.json](mdc:package.json) - Node.js dependencies and scripts
+
+## Configuration Files
+
+- **Hero AI Config**: [heroknight.json](mdc:heroknight.json) - Learning parameters for hero knight AI
+- **Purple Knight Config**: [pknight.json](mdc:pknight.json) - Learning parameters for purple knight AI
+- **Python Backend**: [game_event_microservice/ai_bridge_fastapi.py](mdc:game_event_microservice/ai_bridge_fastapi.py) - FastAPI backend for data collection
+
+## Asset Organization
+
+- **Character Sprites**: [assets/character/](mdc:assets/character/) - All character animations and sprites
+- **Map Assets**: [assets/map/](mdc:assets/map/) - Environment textures and backgrounds
+
+## Key Technologies
+
+- **Game Engine**: Phaser 3 framework
+- **Physics**: Matter.js integrated with Phaser
+- **AI**: Q-learning reinforcement learning
+- **Backend**: FastAPI with ChromaDB for data collection

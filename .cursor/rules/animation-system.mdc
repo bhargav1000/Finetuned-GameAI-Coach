@@ -1,0 +1,45 @@
+---
+globs: src/main.js,assets/character/*
+---
+
+# Animation System Rules
+
+## Critical Animation Guidelines
+
+- **NEVER** manually override `anims.msPerFrame` - breaks global timing and causes gliding
+- Always use `anims.globalTimeScale` for consistent speed adjustments
+- All animations follow `{animation_name}-{direction}` naming convention
+
+## Directional System
+
+**8-Direction Order (CRITICAL)**: `['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne']`
+
+## Animation Catalog (113 Total)
+
+### Loaded Spritesheets (14)
+`idle`, `walk`, `run`, `melee`, `rolling`, `take-damage`, `kick`, `melee2`, `special1`, `die`, `unsheath`, `shield-block-start`, `shield-block-mid`, `front-flip`
+
+### Directional Animations (96)
+- `idle-{direction}` (8 frames, 8 fps, repeats)
+- `walk-{direction}` (15 frames, 15 fps, repeats)  
+- `run-{direction}` (15 frames, 20 fps, repeats)
+- `melee-{direction}` (15 frames, 40 fps, no repeat)
+- `rolling-{direction}` (15 frames, 20 fps, no repeat)
+- `take-damage-{direction}` (8 frames, 20 fps, no repeat)
+- `kick-{direction}` (15 frames, 40 fps, no repeat)
+- `melee2-{direction}` (15 frames, 24 fps, no repeat)
+- `special1-{direction}` (15 frames, 30 fps, no repeat)
+- `shield-block-start-{direction}` (4 frames, 30 fps, no repeat)
+- `shield-block-mid-{direction}` (6 frames, 10 fps, repeats)
+- `front-flip-{direction}` (15 frames, 45 fps, no repeat)
+- `unsheath-{direction}` (15 frames reversed, 15 fps, no repeat)
+
+### Non-directional (1)
+- `die` (15 frames, 8 fps, no repeat)
+
+## Movement Animation Sync
+
+- Movement must complete with proper idle animation
+- Physics body set to static when movement ends
+- Facing direction updated toward target
+- Anti-gliding safety checks in update loop

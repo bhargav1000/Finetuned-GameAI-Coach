@@ -35,12 +35,25 @@ print("Pre-loading SentenceTransformer model...")
 embedder.encode("preload")
 print("Model pre-loaded.")
 
-# Create a single session folder on startup
-SESSION_FOLDER = os.path.join('.screenshots', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-if not os.path.exists(SESSION_FOLDER):
-    os.makedirs(SESSION_FOLDER)
-
+# Global variables for session management
+SESSION_FOLDER = None
 screenshot_counter = 0
+last_game_time = 0  # Track game time to detect restarts
+
+def create_new_session():
+    """Create a new session folder with timestamp"""
+    global SESSION_FOLDER, screenshot_counter, last_game_time
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    SESSION_FOLDER = os.path.join('.screenshots', timestamp)
+    if not os.path.exists(SESSION_FOLDER):
+        os.makedirs(SESSION_FOLDER)
+    screenshot_counter = 0  # Reset counter for new session
+    last_game_time = 0  # Reset game time tracking
+    print(f"🗂️  NEW SESSION: {SESSION_FOLDER}")
+    return SESSION_FOLDER
+
+# Create initial session folder on startup
+create_new_session()
 
 # Pydantic models for data validation
 class CharacterState(BaseModel):
@@ -63,6 +76,12 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     results: List[Dict[str, Any]]
+
+class GameEvent(BaseModel):
+    event_type: str
+    timestamp: int
+    game_time: float
+    message: str
 
 # Global queue for screenshot processing
 screenshot_queue = asyncio.Queue()
@@ -110,6 +129,44 @@ async def root():
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+@app.post("/new_session")
+async def start_new_session():
+    """Create a new screenshot session directory for a game reload"""
+    try:
+        session_path = create_new_session()
+        return {
+            "status": "success", 
+            "message": "New session created manually",
+            "session_folder": session_path,
+            "screenshot_counter_reset": True,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating new session: {str(e)}")
+
+@app.post("/game_event")
+async def handle_game_event(event: GameEvent):
+    """Handle game events like new game started"""
+    try:
+        if event.event_type == "new_game_started":
+            print(f"🎮 NEW GAME STARTED EVENT RECEIVED: {event.message}")
+            session_path = create_new_session()
+            return {
+                "status": "success",
+                "message": f"New game session created: {session_path}",
+                "session_folder": session_path,
+                "event_processed": event.event_type,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "status": "info",
+                "message": f"Event '{event.event_type}' received but not processed",
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error handling game event: {str(e)}")
+
 @app.post("/query", response_model=QueryResponse)
 async def query_events(request: QueryRequest):
     """Query events from ChromaDB"""
@@ -129,11 +186,16 @@ async def process_game_state_snapshot(snapshot: GameStateSnapshot):
         hero_state = snapshot.hero_state.dict()
         knight_state = snapshot.knight_state.dict()
 
-        # 2. Queue the screenshot and states for saving to disk
+        # 2. UPDATE GAME TIME TRACKING (for reference only)
+        global last_game_time
+        current_game_time = hero_state['t']
+        last_game_time = current_game_time
+
+        # 3. Queue the screenshot and states for saving to disk
         image_data = base64.b64decode(snapshot.image.split(',')[1])
         await screenshot_queue.put((image_data, hero_state, knight_state))
 
-        # 3. Prepare hero and knight data for the vector DB
+        # 4. Prepare hero and knight data for the vector DB
         states_to_embed = [hero_state, knight_state]
         
         texts = []
@@ -151,7 +213,7 @@ async def process_game_state_snapshot(snapshot: GameStateSnapshot):
             doc_id = f"{state['t']}-{state['actor']}"
             ids.append(doc_id)
 
-        # 4. Add to ChromaDB
+        # 5. Add to ChromaDB
         db.add(
             ids=ids,
             embeddings=embedder.encode(texts).tolist(),

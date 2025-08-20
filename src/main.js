@@ -1,7 +1,7 @@
 import { Agent } from './RL.js';
 
 // Define action sets for each character
-const KNIGHT_ACTIONS = ['attack', 'approach', 'lunge_left', 'lunge_right', 'block', 'idle'];
+const KNIGHT_ACTIONS = ['attack', 'approach', 'lunge_left', 'lunge_right', 'block', 'roll', 'idle'];
 const HERO_ACTIONS = [
     'move_n', 'move_ne', 'move_e', 'move_se', 'move_s', 'move_sw', 'move_w', 'move_nw',
     'attack_melee', 'attack_melee2', 'attack_special1',
@@ -18,6 +18,38 @@ class PlayScene extends Phaser.Scene {
         this.isDeathSequenceActive = false;
         this.gameOverActive = false;
         this._xHookInitialized = false; // Use a more specific name for the debug flag
+        
+        // Emit new game started event for backend
+        this.emitNewGameEvent();
+    }
+    
+    async emitNewGameEvent() {
+        try {
+            const payload = {
+                event_type: 'new_game_started',
+                timestamp: Date.now(),
+                game_time: this.time ? this.time.now : 0,
+                message: 'New game session started'
+            };
+
+            const response = await fetch('http://localhost:8765/game_event', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('🎮 NEW GAME EVENT SENT:', data.message);
+            } else {
+                console.warn('Failed to send new game event - backend may not be running');
+            }
+        } catch (error) {
+            console.warn('Could not send new game event:', error.message);
+            // Game continues normally even if backend is not available
+        }
     }
 
     preload() {
@@ -309,11 +341,12 @@ class PlayScene extends Phaser.Scene {
         this.purpleKnight.movementDirection = 's';
         this.purpleKnight.staminaRegenDelay = 0;
         
-        // Aggression system - MUCH more aggressive
+        // Aggression system - MUCH more aggressive with time scaling
         this.purpleKnight.aggressionLevel = 25; // Start with some aggression
         this.purpleKnight.timeSinceLastAttack = 0;
         this.purpleKnight.consecutiveBlocks = 0;
-        this.purpleKnight.maxAggression = 200; // Allow higher aggression levels
+        this.purpleKnight.maxAggression = 100; // Base max aggression (will scale with time)
+        this.purpleKnight.lastAggressionBoostTime = -1; // Track last boost time
         
         // Ominous marching system
         this.purpleKnight.ominousMarchEnabled = true;
@@ -523,6 +556,9 @@ class PlayScene extends Phaser.Scene {
 
         this.lastScreenshotTime = 0;
         this.screenshotInterval = 100; // ms
+        
+        // Emit new game event when scene is fully created
+        this.emitNewGameEvent();
     }
 
     knightReact() {
@@ -1614,6 +1650,17 @@ class PlayScene extends Phaser.Scene {
                     // The actual animation will be handled by the tracking logic in update()
                 }
                 break;
+            case 'roll':
+                if (knight.stamina >= 25) { // Rolling costs stamina
+                    knight.stamina -= 25;
+                    knight.anims.play(`rolling-${direction}`, true);
+                    // Brief invulnerability during roll
+                    knight.isRolling = true;
+                    this.time.delayedCall(400, () => {
+                        if (knight.active) knight.isRolling = false;
+                    });
+                }
+                break;
             case 'idle':
                 // NEVER ALLOW IDLE - always force an aggressive action
                 knight.setVelocity(0, 0);
@@ -1808,10 +1855,26 @@ class PlayScene extends Phaser.Scene {
             // --- Aggression System Updates ---
             this.purpleKnight.timeSinceLastAttack += delta;
             
-            // MUCH faster aggression buildup
+            // CONTINUOUS TIME-BASED AGGRESSION SCALING
+            // Gradually increase base aggression over total game time
+            const gameTimeSeconds = time / 1000; // Convert to seconds
+            const aggressionScalingFactor = Math.min(3.0, 1.0 + (gameTimeSeconds / 30)); // Max 3x aggression after 60 seconds
+            
+            // Apply continuous scaling to max aggression based on game time
+            this.purpleKnight.maxAggression = Math.floor(100 * aggressionScalingFactor);
+            
+            // MUCH faster aggression buildup with time scaling
             if (this.purpleKnight.timeSinceLastAttack > 1500) { // Only 1.5 seconds now
+                const scaledAggressionGain = Math.floor(2 * aggressionScalingFactor); // Aggression gain also scales with time
                 this.purpleKnight.aggressionLevel = Math.min(this.purpleKnight.maxAggression, 
-                    this.purpleKnight.aggressionLevel + 2); // 4x faster buildup
+                    this.purpleKnight.aggressionLevel + scaledAggressionGain);
+            }
+            
+            // Additional continuous aggression increase every 2 seconds of game time
+            if (Math.floor(gameTimeSeconds) % 2 === 0 && Math.floor(gameTimeSeconds) !== this.purpleKnight.lastAggressionBoostTime) {
+                this.purpleKnight.aggressionLevel = Math.min(this.purpleKnight.maxAggression, 
+                    this.purpleKnight.aggressionLevel + 1);
+                this.purpleKnight.lastAggressionBoostTime = Math.floor(gameTimeSeconds);
             }
             
             // Harsher penalty for excessive blocking
@@ -1858,6 +1921,18 @@ class PlayScene extends Phaser.Scene {
             this.purpleKnight.lastState = knightState; // Store state
             let knightAction = this.knightAgent.chooseAction(knightState);
             
+            // REACTIVE DEFENSE: Override action if hero is attacking and knight is close enough
+            if (knightState.heroAction === 'attacking' && knightState.distBin === 'close') {
+                // 70% chance to block, 30% chance to roll when hero attacks at close range
+                if (Math.random() < 0.7 && !this.purpleKnight.blockDisabled) {
+                    knightAction = 'block';
+                } else if (this.purpleKnight.stamina >= 25) {
+                    knightAction = 'roll';
+                }
+                // Give immediate reward for reactive defense
+                this.knightAgent.updateQ(knightState, knightAction, 15, knightState);
+            }
+            
             // ELIMINATE IDLE: Always override idle actions with aggressive alternatives
             if (knightAction === 'idle') {
                 const nonIdleActions = KNIGHT_ACTIONS.filter(action => action !== 'idle');
@@ -1869,8 +1944,8 @@ class PlayScene extends Phaser.Scene {
             
             this.purpleKnight.lastAction = knightAction; // Store action
             
-            // ENHANCED REWARD SYSTEM - Prioritize distance closing
-            if (knightAction !== 'idle' && knightAction !== 'block') {
+            // ENHANCED REWARD SYSTEM - Prioritize distance closing and smart defense
+            if (knightAction !== 'idle') {
                 let actionReward = 8; // Increased base reward for taking action
                 
                 // MASSIVE bonuses for distance-closing actions
@@ -1885,6 +1960,19 @@ class PlayScene extends Phaser.Scene {
                 if ((knightAction === 'lunge_left' || knightAction === 'lunge_right')) {
                     if (knightState.distBin === 'medium') actionReward += 12; // Good reward for lunging at medium distance
                     else if (knightState.distBin === 'far') actionReward += 8; // Some reward for lunging when far
+                }
+                
+                // DEFENSIVE ACTION REWARDS
+                if (knightAction === 'block' && knightState.heroAction === 'attacking') {
+                    actionReward += 20; // Big reward for blocking when hero is attacking
+                } else if (knightAction === 'block') {
+                    actionReward += 5; // Small reward for precautionary blocking
+                }
+                
+                if (knightAction === 'roll') {
+                    if (knightState.heroAction === 'attacking') actionReward += 18; // Good reward for rolling away from attacks
+                    else if (knightState.distBin === 'close') actionReward += 10; // Medium reward for creating space
+                    else actionReward += 3; // Small reward for mobility
                 }
                 
                 // Apply the reward immediately for taking action
