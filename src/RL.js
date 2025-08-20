@@ -75,7 +75,14 @@ export class Agent {
      * @returns An object with all actions initialized to a Q-value of 0.
      */
     getInitialQValues() {
-        return Object.fromEntries(this.actions.map(a => [a, 0]));
+        const qValues = Object.fromEntries(this.actions.map(a => [a, 0]));
+        
+        // For knight agents, initialize idle with a very negative value to discourage it
+        if (this.name === 'knight' && qValues['idle'] !== undefined) {
+            qValues['idle'] = -100; // Start with heavily negative Q-value for idle
+        }
+        
+        return qValues;
     }
 
     /**
