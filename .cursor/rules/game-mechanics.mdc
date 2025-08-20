@@ -1,0 +1,45 @@
+---
+globs: src/main.js
+---
+
+# Game Mechanics and Systems
+
+## Character System
+
+- **Hero Knight**: Player-controlled character with 8-directional movement
+- **Purple Knight**: AI-controlled opponent with aggressive behavior patterns
+- **Action Sets**: 
+  - Hero: `HERO_ACTIONS` (movement, attacks, block, dodge)
+  - Knight: `KNIGHT_ACTIONS` (attack, approach, lunge, block, roll, idle)
+
+## Combat System
+
+### Attack Flow
+1. `performAttack(attacker, attackType)` - Initiates attack
+2. 100ms wind-up period with paused animation
+3. `spawnSwordSensor()` creates hit detection sensor
+4. `handleAttackImpact()` processes damage and effects
+
+### Defensive Mechanics
+- **Blocking**: 45-degree frontal arc protection, costs stamina
+- **Rolling**: 25 stamina cost, 400ms invulnerability period
+- **Reactive Defense**: Purple knight automatically blocks (70%) or rolls (30%) when hero attacks
+
+## AI Behavior
+
+### Purple Knight Aggression
+- **Never Idles**: Idle actions always overridden with aggressive alternatives
+- **Distance-Based Actions**: Close = attack, Medium = lunge, Far = approach
+- **Reactive Defense**: Automatically responds to hero attacks at close range
+
+### Reward System
+- +20 for blocking during hero attacks
+- +18 for rolling away from attacks
+- +15 for approach actions when far
+- -50 penalty for idle attempts
+
+## Physics and Collision
+
+- **Anti-Push System**: Triple-layer protection prevents knight pushing
+- **Collision Categories**: Hero (0x0001), Knight (0x0002), Walls (0x0004)
+- **Movement Control**: Predictive collision prevention with velocity clamping

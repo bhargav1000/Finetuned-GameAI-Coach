@@ -1,0 +1,39 @@
+---
+description: Complete technical reference from original rules file
+---
+
+# Legacy Rules Reference (Complete Technical Documentation)
+
+This file preserves the complete technical documentation from the original `.cursor/rules` file for reference.
+
+## Original Content Preserved
+
+The original comprehensive rules file has been backed up to `.cursor/rules-backup.md` and contains:
+
+- Complete animation list (113 total animations)
+- Detailed collision system specifications
+- Full AI behavior documentation
+- Attack flow mechanics
+- Health and damage systems
+- Stamina management
+- Physics anti-gliding system
+- Robust anti-push system implementation
+- Aggressive behavior system details
+- Distance-closing priority system
+- Always-facing system mechanics
+- Reactive defense system
+- Health bar system specifications
+- Complete debugging information
+
+## Access Original Rules
+
+To access the complete original technical documentation:
+```bash
+cat .cursor/rules-backup.md
+```
+
+This reference preserves all the detailed technical specifications while the new modular `.mdc` files provide focused, context-aware guidance for specific development tasks.
+
+## Integration Note
+
+The new modular rule system extracts and organizes the most critical information from the original comprehensive document, making it more accessible and context-specific for development work.

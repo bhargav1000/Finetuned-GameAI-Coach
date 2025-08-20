@@ -1,0 +1,44 @@
+---
+globs: src/main.js
+---
+
+# Physics and Collision System
+
+## Matter.js Integration
+
+### Collision Categories (Bitwise)
+- **Hero**: `0x0001` (category), `0x0006` (mask - collides with knight + walls)
+- **Knight**: `0x0002` (category), `0x0005` (mask - collides with hero + walls)  
+- **Walls**: `0x0004` (category), `0x0003` (mask - collides with both knights)
+
+## Anti-Push System (Version 2.0)
+
+### Triple-Layer Protection
+1. **Predictive Control**: `preventKnightPushing()` predicts and prevents collisions
+2. **Collision Handling**: `handleKnightCollisions()` stops movement on contact
+3. **Force Separation**: `separateKnights()` maintains 85-90px minimum distance
+
+### Velocity Control
+- Hero velocity capped at 6 units maximum
+- Future position prediction prevents pushing
+- Immediate velocity zeroing on collision attempts
+- Position tracking for restoration
+
+### Physics Body Configuration
+- **Hero**: Dynamic body, mass 50,000 for stability
+- **Knight**: Static by default, dynamic during intentional movement
+- **Intentional Movement Flag**: Distinguishes AI commands from unwanted pushing
+
+## Hit Detection
+
+### Sword Sensor System
+- Short-lived invisible rectangles for hit detection
+- Positioned between attacker and target
+- Dynamic collision category adoption
+- 200ms lifetime with automatic cleanup
+
+### Attack Impact Processing
+- Directional blocking within 45-degree frontal arc
+- Armor-based damage reduction with durability
+- Grace period prevents stun-locking
+- Knockback and visual effects on impact

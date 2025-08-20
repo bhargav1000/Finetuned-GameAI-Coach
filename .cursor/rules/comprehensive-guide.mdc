@@ -1,0 +1,68 @@
+---
+alwaysApply: true
+---
+
+# Vibe-Code-Adaptive-Game-AI Comprehensive Guide
+
+## Project Overview
+
+Advanced AI fighting game with Q-learning agents battling in real-time. Built with Phaser 3, Matter.js physics, and comprehensive data collection for AI research.
+
+## Development Workflow
+
+### Making Changes to Game Logic
+1. Always read [src/main.js](mdc:src/main.js) to understand current state
+2. Check animation system rules before modifying character behavior
+3. Test physics changes with debug visualization (F2, X keys)
+4. Verify AI learning is not disrupted by mechanical changes
+
+### AI Behavior Modifications
+1. Review [src/RL.js](mdc:src/RL.js) for Q-learning implementation
+2. Adjust reward systems carefully to maintain learning balance
+3. Test with both aggressive and defensive scenarios
+4. Monitor Q-value evolution over multiple games
+
+### Animation and Visual Changes
+- **CRITICAL**: Never override `anims.msPerFrame` manually
+- Always use the 8-direction system: `['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne']`
+- Test movement completion to prevent gliding effects
+- Verify physics body sync with animation states
+
+## Key Systems Integration
+
+### Combat → AI → Physics Flow
+1. AI selects action based on current state
+2. Action triggers animation and physics changes
+3. Combat system handles hit detection and damage
+4. Results feed back to AI as rewards/penalties
+5. Q-table updates for future decision making
+
+### Critical Interconnections
+- **Animation timing affects physics sync**
+- **Physics collisions influence AI state calculation**
+- **AI rewards shape long-term behavior patterns**
+- **Combat feedback drives learning convergence**
+
+## Common Issues and Solutions
+
+### Purple Knight Not Aggressive Enough
+- Check idle elimination system in update loop
+- Verify reward structure favors aggressive actions
+- Ensure distance-based action forcing is active
+
+### Characters Pushing Each Other
+- Review anti-push system (triple-layer protection)
+- Check collision categories and masks
+- Verify velocity clamping and position tracking
+
+### Animation Gliding/Desync
+- Remove any manual `msPerFrame` overrides
+- Check movement completion logic
+- Ensure physics body static/dynamic transitions
+
+## Testing Protocol
+
+1. **Physics**: Use F2/X debug keys to verify collision behavior
+2. **AI**: Monitor Q-value changes and action selection patterns
+3. **Combat**: Test blocking angles and hit detection accuracy
+4. **Performance**: Check frame rate with debug overlays enabled
