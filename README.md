@@ -133,7 +133,7 @@ Vibe-Code-Adaptive-Game-AI/
 │   └── map/                 # Arena and environment assets
 ├── game_event_microservice/
 │   └── ai_bridge_fastapi.py # Data collection backend
-├── .training_data/          # Generated training datasets
+├── training_data/           # Generated training datasets
 │   ├── [session_folders]/   # Screenshots, metadata, training data
 │   └── summary/             # Aggregated datasets and statistics
 ├── generate_training_data.py # Training data generation script
