@@ -1,0 +1,91 @@
+---
+description: Training Data Generation System for AI Assistant Fine-tuning
+globs: ["generate_training_data.py", ".training_data/**", "**/*training*.json"]
+alwaysApply: false
+---
+
+# Training Data Generation System
+
+## Overview
+
+The training data generation system processes game screenshots and metadata to create comprehensive training datasets for fine-tuning AI assistant models. It transforms raw gameplay data into structured instruction-following examples.
+
+## Generated Structure
+
+```
+.training_data/
+├── [session_timestamp]/
+│   ├── snapshot_X.png              # Original screenshot
+│   ├── snapshot_X.json             # Game state metadata
+│   └── snapshot_X_training.json    # Generated training data
+└── summary/
+    ├── game_outcomes.json          # Game statistics and outcomes
+    ├── winning_patterns.json       # Successful strategy patterns  
+    └── training_dataset.jsonl      # Final training format
+```
+
+## Training Data Features
+
+### Tactical Analysis
+- **Health Categorization**: Critical, low, medium, high, full
+- **Stamina Assessment**: Exhausted, low, medium, high
+- **Distance Analysis**: Close (<100px), medium (<200px), far (>200px)
+- **Game Phase Detection**: Early game, mid game, late game, critical phase, game over
+
+### Strategic Intelligence
+- **Situational Awareness**: Even match, hero advantage, knight advantage
+- **Action Categorization**: Defensive, offensive, movement, idle, victory, death
+- **Risk Assessment**: Low, medium, high risk situations
+- **Tactical Recommendations**: Context-aware advice with confidence scores
+
+### Training Format
+Each training example follows instruction-following format:
+```json
+{
+  "instruction": "You are an expert fighting game coach. Analyze this game state and provide tactical advice for the hero player.",
+  "input": "Hero: 73% HP, 69% stamina, unsheath-s. Knight: 0% HP, 24% stamina, die. Distance: close, Phase: game_over",
+  "output": "You have a significant health advantage! Control the pace"
+}
+```
+
+## Usage
+
+### Generate Training Data
+```bash
+python generate_training_data.py
+```
+
+### Key Components
+- **TrainingDataGenerator**: Main class processing screenshots and metadata
+- **analyze_game_state()**: Extracts tactical information from game states
+- **generate_tactical_advice()**: Creates context-aware strategic recommendations
+- **analyze_game_session()**: Determines game outcomes and statistics
+
+### Output Statistics
+- Total training examples: 11,741
+- Game sessions processed: 134
+- Win/loss distribution: 99.3% hero wins, 0.7% knight wins
+- File types: PNG screenshots, JSON metadata, training data
+
+## Model Fine-tuning Ready
+
+The generated `training_dataset.jsonl` is optimized for fine-tuning models like:
+- Phi-3.5 Mini Instruct
+- Llama 3.1 8B Instruct
+- Mistral 7B Instruct
+
+## Data Quality Features
+
+### Comprehensive Coverage
+- Early game positioning advice
+- Mid game tactical decisions
+- Critical moment analysis
+- Victory/defeat scenarios
+- Stamina management guidance
+
+### Strategic Depth
+- Multi-phase game progression
+- Risk/reward calculations
+- Opponent state exploitation
+- Resource management optimization
+- Combat timing recommendations

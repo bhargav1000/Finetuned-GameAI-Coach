@@ -10,6 +10,7 @@ This project is an advanced **AI fighting game** built with Phaser 3 featuring t
 - **113 Directional Animations**: Complete 8-directional animation set for immersive combat
 - **Physics-based Combat**: Matter.js integration with collision detection and anti-push systems
 - **Data Collection**: ChromaDB integration with screenshot capture and event logging
+- **Training Data Generation**: Automated creation of 11,741+ instruction-following examples for AI model fine-tuning
 - **Debug Tools**: Real-time Q-value visualization and combat statistics
 
 ## Game Components
@@ -76,6 +77,19 @@ The backend runs on `http://localhost:8765` and provides:
 - Game event logging to ChromaDB
 - Semantic search capabilities for game analysis
 
+### 3. Training Data Generation (Optional - for AI assistant development)
+
+Generate comprehensive training datasets from collected gameplay data:
+```bash
+python generate_training_data.py
+```
+
+This creates:
+- **11,741+ training examples** in instruction-following format
+- **Tactical analysis** for each game state
+- **Strategic recommendations** based on historical win/loss patterns
+- **Model-ready datasets** for fine-tuning AI assistants
+
 ## Game Interface
 
 ### AI-Controlled Combat
@@ -119,6 +133,10 @@ Vibe-Code-Adaptive-Game-AI/
 │   └── map/                 # Arena and environment assets
 ├── game_event_microservice/
 │   └── ai_bridge_fastapi.py # Data collection backend
+├── .training_data/          # Generated training datasets
+│   ├── [session_folders]/   # Screenshots, metadata, training data
+│   └── summary/             # Aggregated datasets and statistics
+├── generate_training_data.py # Training data generation script
 ├── heroknight.json          # Hero AI configuration
 ├── pknight.json            # Purple knight AI configuration
 └── index.html              # Game interface with debug panels
@@ -131,3 +149,29 @@ This project demonstrates:
 - **Real-time learning** with immediate strategy adaptation
 - **Behavioral analysis** through comprehensive data collection
 - **Physics-based AI** with realistic movement and collision constraints
+- **AI assistant training** using gameplay data for strategic coaching models
+
+## Training Data Features
+
+### Generated Dataset Statistics
+- **11,741 training examples** from 134 game sessions
+- **99.3% hero win rate** providing winning strategy patterns
+- **Multi-phase coverage**: Early game, mid game, critical moments, endgame
+- **Tactical depth**: Health management, stamina optimization, positioning advice
+
+### AI Assistant Training Format
+Each training example includes:
+```json
+{
+  "instruction": "You are an expert fighting game coach. Analyze this game state and provide tactical advice for the hero player.",
+  "input": "Hero: 73% HP, 69% stamina, unsheath-s. Knight: 0% HP, 24% stamina, die. Distance: close, Phase: game_over",
+  "output": "You have a significant health advantage! Control the pace"
+}
+```
+
+### Model Compatibility
+The training dataset is optimized for fine-tuning:
+- **Phi-3.5 Mini Instruct** (3.8B parameters)
+- **Llama 3.1 8B Instruct** (8B parameters)  
+- **Mistral 7B Instruct** (7B parameters)
+- Other instruction-following language models

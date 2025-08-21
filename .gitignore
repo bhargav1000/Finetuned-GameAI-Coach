@@ -4,6 +4,9 @@
 # dev folders
 .claude/
 .venv/
+node_modules/
+__pycache__/
+.training_data/
 
 # screenshots
 .screenshots/
