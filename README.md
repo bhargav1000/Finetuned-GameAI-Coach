@@ -35,7 +35,56 @@ This project is an advanced **AI fighting game** built with Phaser 3 featuring t
 
 ## Prerequisites
 
-To run this game, you will need a modern web browser and a way to serve the files locally. You'll also need to run the optional backend for data collection.
+- **Modern web browser** (Chrome, Firefox, Safari, Edge)
+- **Python 3.8+** (for backend and AI features)
+- **Node.js** (optional, for npm-based development)
+
+## Installation
+
+### Complete Setup (Recommended)
+
+Install all dependencies for the full experience:
+```bash
+pip install -r requirements.txt
+```
+
+This includes:
+- 🎮 **Game backend** (FastAPI, ChromaDB)
+- 🤖 **AI training** (transformers, PEFT, LoRA) 
+- 📊 **Data processing** (numpy, scipy, scikit-learn)
+- 📈 **Progress visualization** (tqdm)
+- 🔧 **Utilities** (packaging, websockets)
+
+### Enhanced Performance (Optional)
+
+For 2x faster fine-tuning and 50% less memory usage:
+```bash
+pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+```
+
+### Compatibility Check
+
+If you encounter issues with Phi-3.5 fine-tuning:
+```bash
+python fix_phi_compatibility.py
+```
+
+### Platform Notes
+
+**Apple Silicon Macs (M1/M2/M3):**
+- ✅ MPS acceleration automatically detected
+- ✅ All dependencies Mac compatible
+- ✅ No CUDA requirements
+
+**NVIDIA GPUs:**
+- ✅ CUDA acceleration automatic
+- ✅ 4-bit quantization supported
+- 🔧 Optional: flash-attn for extra performance
+
+**CPU Only:**
+- ✅ All features work on CPU
+- ⚠️ Training will be slower
+- 💡 Consider cloud GPU for fine-tuning
 
 ## Quick Start
 
@@ -62,10 +111,7 @@ Navigate to `http://localhost:8000`
 
 ### 2. Backend Setup (Optional - for data collection)
 
-Install Python dependencies:
-```bash
-pip install -r requirements.txt
-```
+Dependencies are already installed if you ran the installation above.
 
 Start the AI bridge server:
 ```bash
@@ -89,6 +135,23 @@ This creates:
 - **Tactical analysis** for each game state
 - **Strategic recommendations** based on historical win/loss patterns
 - **Model-ready datasets** for fine-tuning AI assistants
+
+### 4. Fine-tune AI Model (Optional - for AI assistant)
+
+Fine-tune a Phi-3.5 model using your collected training data:
+```bash
+python finetune_phi_model.py
+```
+
+This will:
+- 📥 Download Phi-3.5-mini-instruct model
+- 🔧 Apply LoRA fine-tuning with your 11,741+ examples
+- 💾 Save fine-tuned model for tactical advice generation
+- 🧪 Test model with sample game scenarios
+
+**Hardware Requirements:**
+- **Recommended**: 8GB+ VRAM (NVIDIA/AMD) or Apple Silicon Mac
+- **Minimum**: 16GB+ RAM for CPU-only training
 
 ## Game Interface
 

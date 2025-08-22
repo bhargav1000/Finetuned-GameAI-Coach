@@ -28,6 +28,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 import logging
+from tqdm.auto import tqdm
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +40,20 @@ MPS_AVAILABLE = torch.backends.mps.is_available() if hasattr(torch.backends, 'mp
 DEVICE = "cuda" if CUDA_AVAILABLE else "mps" if MPS_AVAILABLE else "cpu"
 
 logger.info(f"🖥️  System Info: CUDA={CUDA_AVAILABLE}, MPS={MPS_AVAILABLE}, Device={DEVICE}")
+
+# Check transformers version compatibility
+try:
+    import transformers
+    transformers_version = transformers.__version__
+    logger.info(f"📦 Transformers version: {transformers_version}")
+    
+    # Check for known compatibility issues
+    from packaging import version
+    if version.parse(transformers_version) >= version.parse("4.45.0"):
+        logger.warning("⚠️  Warning: Transformers version may have compatibility issues with Phi-3.5")
+        logger.warning("⚠️  Consider downgrading: pip install transformers==4.44.2")
+except ImportError:
+    logger.warning("⚠️  Could not check transformers version")
 
 # Check if unsloth is available, if not provide installation instructions
 try:
@@ -107,7 +122,7 @@ class PhiGameAssistantTrainer:
             "warmup_steps": 10,
             "max_steps": 50 if DEVICE == "cpu" else 200,  # Reduced for CPU
             "learning_rate": 2e-4,
-            "fp16": CUDA_AVAILABLE or MPS_AVAILABLE,  # FP16 works on both CUDA and MPS
+            "fp16": CUDA_AVAILABLE,  # FP16 mixed precision only works on CUDA in transformers
             "bf16": False,  # Disable for compatibility
             "logging_steps": 5,
             "optim": optim,
@@ -147,21 +162,30 @@ class PhiGameAssistantTrainer:
         if not self.training_data_path.exists():
             raise FileNotFoundError(f"Training data not found: {self.training_data_path}")
         
+        # First pass to count total lines for progress bar
+        with open(self.training_data_path, 'r') as f:
+            total_lines = sum(1 for _ in f)
+        
         training_examples = []
         with open(self.training_data_path, 'r') as f:
-            for line_num, line in enumerate(f, 1):
-                try:
-                    example = json.loads(line.strip())
-                    
-                    # Validate required fields
-                    required_fields = ['instruction', 'input', 'output']
-                    if all(field in example for field in required_fields):
-                        training_examples.append(example)
-                    else:
-                        logger.warning(f"Skipping invalid example at line {line_num}: missing required fields")
+            with tqdm(total=total_lines, desc="📖 Loading training data", unit="examples") as pbar:
+                for line_num, line in enumerate(f, 1):
+                    try:
+                        example = json.loads(line.strip())
                         
-                except json.JSONDecodeError:
-                    logger.warning(f"Skipping invalid JSON at line {line_num}")
+                        # Validate required fields
+                        required_fields = ['instruction', 'input', 'output']
+                        if all(field in example for field in required_fields):
+                            training_examples.append(example)
+                        else:
+                            logger.warning(f"Skipping invalid example at line {line_num}: missing required fields")
+                            
+                    except json.JSONDecodeError:
+                        logger.warning(f"Skipping invalid JSON at line {line_num}")
+                    
+                    pbar.update(1)
+                    if line_num % 1000 == 0:  # Update description every 1000 lines
+                        pbar.set_postfix(valid=len(training_examples), invalid=line_num-len(training_examples))
         
         logger.info(f"✅ Loaded {len(training_examples)} valid training examples")
         return training_examples
@@ -183,16 +207,18 @@ Game State: {example['input']}<|end|>
         """Prepare dataset for training"""
         logger.info("🔄 Preparing dataset...")
         
-        # Format prompts
+        # Format prompts with progress bar
         formatted_texts = []
-        for example in training_examples:
-            formatted_text = self.format_training_prompt(example)
-            formatted_texts.append(formatted_text)
+        with tqdm(training_examples, desc="🔤 Formatting prompts", unit="examples") as pbar:
+            for example in pbar:
+                formatted_text = self.format_training_prompt(example)
+                formatted_texts.append(formatted_text)
         
         # Create HuggingFace dataset
+        logger.info("📦 Creating HuggingFace dataset...")
         dataset = Dataset.from_dict({"text": formatted_texts})
         
-        # Tokenize
+        # Tokenize with progress bar
         def tokenize_function(examples):
             return self.tokenizer(
                 examples["text"],
@@ -202,10 +228,12 @@ Game State: {example['input']}<|end|>
                 return_overflowing_tokens=False,
             )
         
+        logger.info("🔢 Tokenizing dataset...")
         tokenized_dataset = dataset.map(
             tokenize_function, 
             batched=True,
-            remove_columns=dataset.column_names
+            remove_columns=dataset.column_names,
+            desc="Tokenizing"
         )
         logger.info(f"✅ Dataset prepared with {len(tokenized_dataset)} examples")
         
@@ -222,20 +250,28 @@ Game State: {example['input']}<|end|>
         # Configure quantization based on available hardware
         load_in_4bit = CUDA_AVAILABLE  # Only use 4-bit on CUDA
         
-        model, tokenizer = FastLanguageModel.from_pretrained(
-            model_name=model_path,
-            max_seq_length=self.max_seq_length,
-            dtype=None,  # Auto-detect
-            load_in_4bit=load_in_4bit,
-            trust_remote_code=True,
-            device_map="auto" if CUDA_AVAILABLE else None,
-        )
-        
-        # Add LoRA adapters
-        model = FastLanguageModel.get_peft_model(
-            model,
-            **self.lora_config
-        )
+        with tqdm(total=3, desc="📥 Loading model components") as pbar:
+            pbar.set_description("📥 Downloading/loading model")
+            model, tokenizer = FastLanguageModel.from_pretrained(
+                model_name=model_path,
+                max_seq_length=self.max_seq_length,
+                dtype=None,  # Auto-detect
+                load_in_4bit=load_in_4bit,
+                trust_remote_code=True,
+                device_map="auto" if CUDA_AVAILABLE else None,
+            )
+            pbar.update(1)
+            
+            pbar.set_description("🔧 Adding LoRA adapters")
+            # Add LoRA adapters
+            model = FastLanguageModel.get_peft_model(
+                model,
+                **self.lora_config
+            )
+            pbar.update(1)
+            
+            pbar.set_description("✅ Model ready")
+            pbar.update(1)
         
         self.model = model
         self.tokenizer = tokenizer
@@ -250,47 +286,56 @@ Game State: {example['input']}<|end|>
         # The local cache will be handled automatically by transformers
         model_path = self.model_name
         
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            trust_remote_code=True,
-            cache_dir=str(self.base_model_dir)
-        )
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        with tqdm(total=4, desc="📥 Loading model components") as pbar:
+            pbar.set_description("🔤 Loading tokenizer")
+            # Load tokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_path,
+                trust_remote_code=True,
+                cache_dir=str(self.base_model_dir)
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            pbar.update(1)
         
-        # Load model with appropriate settings for the device
-        model_kwargs = {
-            "trust_remote_code": True,
-            "cache_dir": str(self.base_model_dir)
-        }
-        
-        if CUDA_AVAILABLE:
-            # CUDA settings
-            model_kwargs.update({
-                "torch_dtype": torch.float16,
-                "device_map": "auto",
-                "load_in_4bit": True,  # Requires bitsandbytes
-            })
-        elif MPS_AVAILABLE:
-            # Apple Silicon settings
-            model_kwargs.update({
-                "torch_dtype": torch.float16,
-                "device_map": None,  # MPS doesn't support device_map
-                "low_cpu_mem_usage": True,  # Optimize memory usage on Mac
-            })
-        else:
-            # CPU settings
-            model_kwargs.update({
-                "torch_dtype": torch.float32,  # Use float32 on CPU
-                "device_map": None,
-            })
-        
-        model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
-        
-        # Move to appropriate device if not using device_map
-        if not CUDA_AVAILABLE:
-            model = model.to(DEVICE)
+            pbar.set_description("🧠 Configuring model settings")
+            # Load model with appropriate settings for the device
+            model_kwargs = {
+                "trust_remote_code": True,
+                "cache_dir": str(self.base_model_dir)
+            }
+            
+            if CUDA_AVAILABLE:
+                # CUDA settings
+                model_kwargs.update({
+                    "torch_dtype": torch.float16,
+                    "device_map": "auto",
+                    "load_in_4bit": True,  # Requires bitsandbytes
+                })
+            elif MPS_AVAILABLE:
+                # Apple Silicon settings - use float32 for better compatibility
+                model_kwargs.update({
+                    "torch_dtype": torch.float32,  # Use float32 for MPS compatibility
+                    "device_map": None,  # MPS doesn't support device_map
+                    "low_cpu_mem_usage": True,  # Optimize memory usage on Mac
+                })
+            else:
+                # CPU settings
+                model_kwargs.update({
+                    "torch_dtype": torch.float32,  # Use float32 on CPU
+                    "device_map": None,
+                })
+            pbar.update(1)
+            
+            pbar.set_description("📥 Loading model weights")
+            model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
+            pbar.update(1)
+            
+            pbar.set_description("🎯 Moving to device")
+            # Move to appropriate device if not using device_map
+            if not CUDA_AVAILABLE:
+                model = model.to(DEVICE)
+            pbar.update(1)
         
         # Add LoRA
         peft_config = LoraConfig(
@@ -456,39 +501,44 @@ Game State: {example['input']}<|end|>
             }
         ]
         
-        # Generate responses
-        for i, test_case in enumerate(test_cases, 1):
-            prompt = f"""<|user|>
+        # Generate responses with progress bar
+        with tqdm(test_cases, desc="🎮 Testing model", unit="test") as pbar:
+            for i, test_case in enumerate(pbar, 1):
+                pbar.set_description(f"🎮 Testing case {i}/{len(test_cases)}")
+                
+                prompt = f"""<|user|>
 {test_case['instruction']}
 
 Game State: {test_case['input']}<|end|>
 <|assistant|>
 """
-            
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-            
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=150,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
-            
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            # Extract just the assistant's response
-            assistant_response = response.split("<|assistant|>")[-1].strip()
-            
-            print(f"\n🎮 Test Case {i}:")
-            print(f"Input: {test_case['input']}")
-            print(f"Response: {assistant_response}")
-            print("-" * 80)
+                
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+                
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=150,
+                        do_sample=True,
+                        temperature=0.7,
+                        top_p=0.9,
+                        pad_token_id=self.tokenizer.eos_token_id
+                    )
+                
+                response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                # Extract just the assistant's response
+                assistant_response = response.split("<|assistant|>")[-1].strip()
+                
+                print(f"\n🎮 Test Case {i}:")
+                print(f"Input: {test_case['input']}")
+                print(f"Response: {assistant_response}")
+                print("-" * 80)
 
     def run_training(self):
         """Run the complete training pipeline"""
         print("🎮 Fighting Game AI Assistant Fine-tuning")
+        print("=" * 50)
+        print(f"🖥️  DEVICE USED FOR TRAINING: {DEVICE.upper()}")
         print("=" * 50)
         
         # Check dependencies
@@ -502,11 +552,20 @@ Game State: {test_case['input']}<|end|>
             # Load training data
             training_examples = self.load_training_data()
             
-            # Load model
-            if UNSLOTH_AVAILABLE:
-                self.load_model_unsloth()
-            else:
-                self.load_model_transformers()
+            # Load model with fallback strategy
+            try:
+                if UNSLOTH_AVAILABLE:
+                    logger.info("🚀 Attempting to load with Unsloth...")
+                    self.load_model_unsloth()
+                else:
+                    logger.info("🔄 Attempting to load with Transformers...")
+                    self.load_model_transformers()
+            except Exception as model_error:
+                logger.error(f"❌ Model loading failed: {model_error}")
+                if "get_usable_length" in str(model_error):
+                    logger.error("💡 This appears to be a transformers version compatibility issue")
+                    logger.error("💡 Try: pip install transformers==4.44.2 peft==0.12.0")
+                raise
             
             # Prepare dataset
             dataset = self.prepare_dataset(training_examples)
