@@ -90,7 +90,7 @@ class PhiGameAssistantTrainer:
                  training_data_path: str = "training_data/summary/training_dataset.jsonl",
                  model_dir: str = "model",
                  output_dir: str = "model/fine_tuned",
-                 max_seq_length: int = 2048):
+                 max_seq_length: int = 1024):
         
         self.model_name = model_name
         self.training_data_path = Path(training_data_path)
@@ -141,7 +141,7 @@ class PhiGameAssistantTrainer:
             "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj",
                              "gate_proj", "up_proj", "down_proj"],
             "lora_alpha": 16,
-            "lora_dropout": 0,
+            "lora_dropout": 0.05,   # was 0; helps generalization
             "bias": "none",
             "use_gradient_checkpointing": "unsloth" if UNSLOTH_AVAILABLE else True,
             "random_state": 3407,
@@ -193,8 +193,11 @@ class PhiGameAssistantTrainer:
     def format_training_prompt(self, example: Dict) -> str:
         """Format training example into Phi-3.5 chat template"""
         
-        # Phi-3.5 chat template format
-        prompt = f"""<|user|>
+        # Phi-3.5 chat template format with system message
+        prompt = f"""<|system|>
+You are an in-game sword-duel coach. Give one concise tip about movement, blocking, dodging, or melee attacks only.
+If unsure, reply: No tip.<|end|>
+<|user|>
 {example['instruction']}
 
 Game State: {example['input']}<|end|>
@@ -315,7 +318,7 @@ Game State: {example['input']}<|end|>
             elif MPS_AVAILABLE:
                 # Apple Silicon settings - use float32 for better compatibility
                 model_kwargs.update({
-                    "torch_dtype": torch.float32,  # Use float32 for MPS compatibility
+                    "torch_dtype": torch.float16,  # Use float32 for MPS compatibility
                     "device_map": None,  # MPS doesn't support device_map
                     "low_cpu_mem_usage": True,  # Optimize memory usage on Mac
                 })
@@ -506,7 +509,10 @@ Game State: {example['input']}<|end|>
             for i, test_case in enumerate(pbar, 1):
                 pbar.set_description(f"🎮 Testing case {i}/{len(test_cases)}")
                 
-                prompt = f"""<|user|>
+                prompt = f"""<|system|>
+You are an in-game sword-duel coach. Give one concise tip about movement, blocking, dodging, or melee attacks only.
+If unsure, reply: No tip.<|end|>
+<|user|>
 {test_case['instruction']}
 
 Game State: {test_case['input']}<|end|>
@@ -611,7 +617,7 @@ def main():
         training_data_path=str(training_data_path),
         model_dir="model",
         output_dir="model/fine_tuned",
-        max_seq_length=2048
+        max_seq_length=1024
     )
     
     # Run training
