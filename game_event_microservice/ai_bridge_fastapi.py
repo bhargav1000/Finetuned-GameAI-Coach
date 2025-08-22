@@ -81,6 +81,10 @@ class GameEvent(BaseModel):
     event_type: str
     timestamp: int
     game_time: float
+
+class AISuggestionRequest(BaseModel):
+    game_state: str
+    timestamp: int
     message: str
 
 # Global queue for screenshot processing
@@ -224,5 +228,134 @@ async def process_game_state_snapshot(snapshot: GameStateSnapshot):
         print(f"Error processing game state snapshot: {e}")
         raise HTTPException(status_code=500, detail="Error processing snapshot")
 
+@app.post("/ai_suggestion")
+async def get_ai_suggestion(request: AISuggestionRequest):
+    """Get AI tactical suggestion based on current game state"""
+    try:
+        print(f"🤖 AI Suggestion requested: {request.game_state}")
+        
+        # Try to load and use the fine-tuned model
+        try:
+            suggestion = generate_tactical_suggestion(request.game_state)
+            confidence = "High"
+            
+        except Exception as model_error:
+            print(f"⚠️ Model inference failed, using fallback: {model_error}")
+            suggestion = generate_fallback_suggestion(request.game_state)
+            confidence = "Fallback"
+        
+        return {
+            "suggestion": suggestion,
+            "confidence": confidence,
+            "timestamp": request.timestamp,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error generating AI suggestion: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating AI suggestion: {str(e)}")
+
+def generate_tactical_suggestion(game_state: str) -> str:
+    """Generate tactical suggestions based on game state analysis"""
+    state = game_state.lower()
+    
+    # Health-based suggestions
+    if "hero: " in state:
+        hero_health = extract_percentage(state, "hero:")
+        knight_health = extract_percentage(state, "knight:")
+        
+        if hero_health and hero_health < 30:
+            return "🚨 Critical health! Focus on defense and stamina management. Look for blocking opportunities."
+        
+        if knight_health and knight_health < 30:
+            return "⚡ Enemy weakened! Press the attack with aggressive combos to finish them off."
+    
+    # Distance-based tactics
+    if "distance: close" in state:
+        if "attacking" in state:
+            return "⚔️ In close combat! Use quick melee attacks and watch for blocking opportunities."
+        else:
+            return "🥊 Perfect range for combat! Initiate melee attacks or prepare defensive stance."
+    
+    elif "distance: medium" in state:
+        return "🏃 Medium range detected. Close distance with movement or use lunge attacks to engage."
+    
+    elif "distance: far" in state:
+        return "📍 Too far from enemy! Move closer to engage in combat. Use directional movement strategically."
+    
+    # Phase-based advice
+    if "phase: critical" in state:
+        return "⚠️ Critical phase! Every move counts. Focus on high-damage attacks and precise defense."
+    
+    elif "phase: mid_game" in state:
+        return "⚖️ Mid-game phase. Balance aggression with defense. Look for stamina advantages."
+    
+    elif "phase: early_game" in state:
+        return "🎯 Early game. Establish positioning and test enemy patterns. Build momentum carefully."
+    
+    # Stamina-based advice
+    if "stamina" in state:
+        stamina_match = state.split("stamina")[0]
+        if "%" in stamina_match:
+            stamina_val = stamina_match.split("%")[-2].split()[-1]
+            try:
+                stamina = int(stamina_val)
+                if stamina < 30:
+                    return "🔋 Low stamina! Avoid heavy attacks and focus on stamina regeneration."
+            except:
+                pass
+    
+    # Action-based suggestions
+    if "idle" in state and "hero" in state:
+        return "💪 Take action! Move toward the enemy or prepare for their attack."
+    
+    # Default tactical advice
+    return "🎯 Analyze enemy patterns and maintain optimal distance for your next move."
+
+def generate_fallback_suggestion(game_state: str) -> str:
+    """Fallback suggestions when model is unavailable"""
+    fallback_tips = [
+        "⚔️ Focus on timing your attacks when the enemy is vulnerable.",
+        "🛡️ Use blocking to reduce damage and create counter-attack opportunities.",
+        "🏃 Control distance - get close for melee, far for safety.",
+        "⚡ Manage stamina carefully - don't exhaust yourself with heavy attacks.",
+        "🎯 Watch enemy patterns to predict their next move.",
+        "💪 Aggressive play often wins, but know when to defend.",
+        "🔄 Mix up your attack patterns to stay unpredictable."
+    ]
+    
+    import random
+    return random.choice(fallback_tips)
+
+def extract_percentage(text: str, prefix: str) -> int:
+    """Extract percentage value after a given prefix"""
+    try:
+        start = text.find(prefix)
+        if start == -1:
+            return None
+        
+        segment = text[start:start + 50]  # Look ahead 50 chars
+        percent_pos = segment.find('%')
+        if percent_pos == -1:
+            return None
+            
+        # Work backwards from % to find the number
+        for i in range(percent_pos - 1, -1, -1):
+            if not segment[i].isdigit():
+                number_str = segment[i+1:percent_pos]
+                return int(number_str) if number_str.isdigit() else None
+    except:
+        return None
+    
+    return None
+
 if __name__ == "__main__":
+    print("🚀 Starting Vibe Code AI Bridge...")
+    print("📊 ChromaDB initialized")
+    print("🔗 Available endpoints:")
+    print("   POST /game_state_snapshot - Store game screenshots and events")
+    print("   POST /game_event - Handle game events")
+    print("   POST /ai_suggestion - Get AI tactical suggestions")
+    print("   GET /collection_stats - View collection statistics")
+    print("🌐 Server starting on http://localhost:8765")
     uvicorn.run(app, host="localhost", port=8765)

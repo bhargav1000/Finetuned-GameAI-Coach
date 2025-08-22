@@ -645,10 +645,6 @@ Game State: {test_case['input']}<|end|>
             print("\n🎉 Fine-tuning completed successfully!")
             print(f"📁 Model cache: {self.base_model_dir}")
             print(f"📁 Fine-tuned model: {self.output_dir}")
-            print("\nNext steps:")
-            print("1. Test the model with more examples")
-            print("2. Integrate into your game for real-time advice")
-            print("3. Consider further fine-tuning with more data")
             
         except Exception as e:
             logger.error(f"❌ Training failed: {e}")

@@ -88,7 +88,33 @@ python fix_phi_compatibility.py
 
 ## Quick Start
 
-### 1. Frontend Setup (Required)
+### 🎯 AI Demo Mode (Recommended)
+
+Experience the complete AI-enhanced fighting game with real-time tactical suggestions:
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start the AI backend
+python game_event_microservice/ai_bridge_fastapi.py
+
+# 3. Launch AI demo (in new terminal)
+npm run demo
+```
+
+Navigate to `http://localhost:5173/demo.html`
+
+**✨ Demo Features:**
+- 🤖 **Real-time AI coaching** with tactical suggestions
+- 📊 **Live game analysis** (health, stamina, distance, phase)
+- ⚡ **Auto/manual suggestion modes**
+- 📝 **Suggestion history tracking**
+- 🎨 **Modern interface** with AI assistant panel
+
+### 🎮 Original Game Mode
+
+For the standard game experience without AI assistance:
 
 **Option A: Using npm (Recommended)**
 ```bash
@@ -109,7 +135,7 @@ python3 -m http.server
 ```
 Navigate to `http://localhost:8000`
 
-### 2. Backend Setup (Optional - for data collection)
+### 2. Backend Setup (Required for AI Demo - Optional for basic game)
 
 Dependencies are already installed if you ran the installation above.
 
@@ -119,9 +145,10 @@ python game_event_microservice/ai_bridge_fastapi.py
 ```
 
 The backend runs on `http://localhost:8765` and provides:
-- Screenshot capture and storage
-- Game event logging to ChromaDB
-- Semantic search capabilities for game analysis
+- 🤖 **AI tactical suggestions** with real-time analysis
+- 📸 **Screenshot capture and storage** for training data
+- 📊 **Game event logging** to ChromaDB
+- 🔍 **Semantic search capabilities** for game analysis
 
 ### 3. Training Data Generation (Optional - for AI assistant development)
 
@@ -204,15 +231,33 @@ plt.show()
 
 ## Game Interface
 
-### AI-Controlled Combat
+### 🎯 AI Demo Mode Interface
+
+**Left Side - Game Arena:**
+- Autonomous AI vs AI combat with real-time learning
+- Debug controls: **X** (collision boundaries), **F2** (physics), **P** (screenshot)
+
+**Right Side - AI Assistant Panel:**
+- 🤖 **AI Tactical Coach** - Real-time fighting suggestions
+- 📊 **Live Game Analysis** - Health/stamina bars, distance, phase tracking
+- 📝 **Suggestion History** - Chronological advice log
+- 🎮 **Demo Controls** - Manual suggestions, auto-mode toggle
+
+**Bottom Panel - Live Events:**
+- Combat event stream with JSON formatting
+- Real-time action logging and state changes
+
+### 🎮 Original Game Interface
+
+**AI-Controlled Combat:**
 The game runs **completely autonomously** - both knights are controlled by AI agents that learn and adapt their fighting strategies in real-time. No manual input is required for gameplay.
 
-### Debug Controls
+**Debug Controls:**
 - **X**: Toggle collision boundary visualization
 - **F2**: Toggle physics body debug display
 - **P**: Manual screenshot capture
 
-### Debug Panels
+**Debug Panels:**
 - **Q-Learning Panel** (right side): Real-time Q-values for knight actions
 - **Events Panel** (bottom): Live combat event log
 - **Health/Stamina Bars**: Visual representation of knight status
@@ -253,9 +298,13 @@ Vibe-Code-Adaptive-Game-AI/
 ├── finetune_phi_model.py    # Phi-3.5 model fine-tuning
 ├── training_visualizer.py   # Visualization system
 ├── test_visualization.py    # Demo visualization script
+├── demo.html               # 🎯 AI-enhanced demo interface
+├── src/
+│   ├── main.js             # Original game logic
+│   └── demo.js             # 🤖 AI demo with suggestions
 ├── heroknight.json          # Hero AI configuration
 ├── pknight.json            # Purple knight AI configuration
-└── index.html              # Game interface with debug panels
+└── index.html              # Original game interface
 ```
 
 ## Research Applications

@@ -1,0 +1,119 @@
+---
+description: AI Demo System with Live Tactical Suggestions
+alwaysApply: true
+globs:
+  - "demo.html"
+  - "src/demo.js"
+  - "game_event_microservice/ai_bridge_fastapi.py"
+---
+
+# AI Demo System
+
+## Overview
+
+The demo system provides a real-time AI coaching experience alongside the fighting game, featuring live tactical suggestions and game state analysis.
+
+## Core Components
+
+### Demo Files
+- **`demo.html`** - AI-enhanced interface with suggestions panel
+- **`src/demo.js`** - Copy of main.js with AI integration
+- **Original files untouched** - main.js and index.html preserved
+
+### AI Suggestion System
+- **Backend Endpoint**: `POST /ai_suggestion`
+- **Smart Analysis**: Health, stamina, distance, phase-based advice
+- **Fallback System**: Rule-based suggestions when model offline
+- **Real-time Updates**: Every 3 seconds in auto mode
+
+## Interface Features
+
+### Right Panel Components
+- **🎯 Current Suggestion** - Latest AI tactical advice
+- **📊 Game State Analysis** - Live health/stamina bars and metrics
+- **📝 Suggestion History** - Chronological advice tracking
+- **🎮 Demo Controls** - Manual/auto suggestion toggles
+
+### AI Suggestion Categories
+1. **Health-Based**: Critical health warnings, advantage notifications
+2. **Distance-Based**: Close combat, medium range, far engagement advice
+3. **Phase-Based**: Early game, mid game, critical phase strategies
+4. **Stamina-Based**: Energy management recommendations
+5. **Action-Based**: Movement and combat timing suggestions
+
+## Launch Commands
+
+### Demo Mode
+```bash
+npm run demo                    # Start demo server
+# Navigate to: http://localhost:5173/demo.html
+```
+
+### Original Game
+```bash
+npm run dev                     # Start original game
+# Navigate to: http://localhost:5173
+```
+
+### Backend
+```bash
+python game_event_microservice/ai_bridge_fastapi.py
+```
+
+## Development Guidelines
+
+### Demo.js Modifications
+- **Keep main.js untouched** - Always reference but never modify
+- **AI Integration Points**: 
+  - `requestAISuggestion()` - Manual suggestion requests
+  - `updateDemoInterface()` - Live UI updates
+  - `getCurrentGameStateString()` - State serialization
+
+### Backend AI Endpoint
+- **Input**: Game state string with health, stamina, distance, phase
+- **Processing**: Smart tactical analysis with contextual advice
+- **Output**: Suggestion text with confidence level
+- **Fallbacks**: Rule-based suggestions for offline model scenarios
+
+### Interface Updates
+- **Real-time State**: Health bars, distance indicators, phase tracking
+- **Suggestion Display**: Current advice with confidence rating
+- **History Management**: Chronological tracking with timestamps
+- **Control Integration**: Auto/manual modes with visual feedback
+
+## Testing Protocol
+
+1. **Backend First**: Start AI bridge server
+2. **Demo Launch**: Use `npm run demo` command
+3. **Interface Check**: Verify right panel loads correctly
+4. **AI Suggestions**: Test both manual and auto modes
+5. **State Tracking**: Confirm live updates during gameplay
+6. **Original Preservation**: Verify `npm run dev` still works
+
+## Integration Notes
+
+### Fine-tuned Model Integration
+- Replace `generate_tactical_suggestion()` logic with model inference
+- Use existing game state string format for model input
+- Maintain fallback system for reliability
+- Update confidence scoring based on model certainty
+
+### UI Customization
+- Modern gradient design with tech aesthetic
+- Responsive layout for different screen sizes
+- Smooth animations and transitions
+- Accessibility considerations for color contrast
+
+## Troubleshooting
+
+### Common Issues
+- **Backend Offline**: AI suggestions fall back to rule-based system
+- **CORS Errors**: Check FastAPI CORS middleware configuration
+- **Port Conflicts**: Demo uses same port 5173, different HTML files
+- **Interface Not Loading**: Verify demo.html path and script imports
+
+### Debug Tools
+- Browser console for JavaScript errors
+- Backend terminal for API request logs
+- Network tab for CORS and request debugging
+- Game debug keys (F2, X) still functional in demo
