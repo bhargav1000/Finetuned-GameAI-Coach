@@ -11,3 +11,7 @@ training_data/*
 # screenshots
 screenshots/*
 
+# model weights and fine-tuned models
+model/*
+!model/.gitkeep
+
