@@ -6,7 +6,7 @@ This script processes game screenshots and metadata to generate comprehensive
 training data for fine-tuning a game strategy assistant model.
 
 Structure:
-.training_data/
+training_data/
 ├── [session_timestamp]/
 │   ├── snapshot_X.png          # Original screenshot
 │   ├── snapshot_X.json         # Game state metadata
@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
 class TrainingDataGenerator:
-    def __init__(self, screenshots_dir=".screenshots", training_dir=".training_data"):
+    def __init__(self, screenshots_dir="screenshots", training_dir="training_data"):
         self.screenshots_dir = Path(screenshots_dir)
         self.training_dir = Path(training_dir)
         

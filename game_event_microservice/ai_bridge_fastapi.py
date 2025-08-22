@@ -44,7 +44,7 @@ def create_new_session():
     """Create a new session folder with timestamp"""
     global SESSION_FOLDER, screenshot_counter, last_game_time
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    SESSION_FOLDER = os.path.join('.screenshots', timestamp)
+    SESSION_FOLDER = os.path.join('screenshots', timestamp)
     if not os.path.exists(SESSION_FOLDER):
         os.makedirs(SESSION_FOLDER)
     screenshot_counter = 0  # Reset counter for new session

@@ -1,0 +1,7 @@
+# This file ensures the model/ directory is tracked in git
+# The actual model files will be ignored but the directory structure is preserved
+
+# Directory structure:
+# model/
+# ├── cache/             # HuggingFace model cache (managed automatically)
+# └── fine_tuned/        # Fine-tuned model with LoRA adapters

@@ -1,6 +1,6 @@
 ---
 description: Training Data Generation System for AI Assistant Fine-tuning
-globs: ["generate_training_data.py", ".training_data/**", "**/*training*.json"]
+globs: ["generate_training_data.py", "training_data/**", "**/*training*.json"]
 alwaysApply: false
 ---
 
@@ -13,7 +13,7 @@ The training data generation system processes game screenshots and metadata to c
 ## Generated Structure
 
 ```
-.training_data/
+training_data/
 ├── [session_timestamp]/
 │   ├── snapshot_X.png              # Original screenshot
 │   ├── snapshot_X.json             # Game state metadata

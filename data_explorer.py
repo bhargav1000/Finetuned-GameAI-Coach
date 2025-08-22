@@ -15,7 +15,7 @@ from sentence_transformers import SentenceTransformer
 
 def explore_screenshots():
     """Explore screenshot data on filesystem"""
-    screenshots_dir = Path('.screenshots')
+    screenshots_dir = Path('screenshots')
     
     if not screenshots_dir.exists():
         print("❌ No screenshots directory found")
@@ -173,8 +173,8 @@ def export_training_data():
     # Create summary
     summary = {
         'export_time': datetime.now().isoformat(),
-        'total_screenshots': len(list(Path('.screenshots').glob('**/*.png'))),
-        'total_sessions': len([d for d in Path('.screenshots').iterdir() if d.is_dir()]),
+        'total_screenshots': len(list(Path('screenshots').glob('**/*.png'))),
+        'total_sessions': len([d for d in Path('screenshots').iterdir() if d.is_dir()]),
         'vector_db_records': len(df_data) if 'df_data' in locals() else 0
     }
     

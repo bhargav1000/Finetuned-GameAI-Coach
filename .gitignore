@@ -6,8 +6,12 @@
 .venv/
 node_modules/
 __pycache__/
-.training_data/
+training_data/*
 
 # screenshots
-.screenshots/
+screenshots/*
+
+# model weights and fine-tuned models
+model/*
+!model/.gitkeep
 
