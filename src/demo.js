@@ -60,7 +60,7 @@ class DemoPlayScene extends Phaser.Scene {
             
             const gameState = this.getCurrentGameStateString();
             
-            const response = await fetch('http://localhost:8765/ai_suggestion', {
+            const response = await fetch('http://localhost:8766/ai_suggestion', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

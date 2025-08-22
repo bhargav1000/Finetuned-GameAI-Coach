@@ -96,10 +96,13 @@ Experience the complete AI-enhanced fighting game with real-time tactical sugges
 # 1. Install dependencies
 npm install
 
-# 2. Start the AI backend
+# 2. Start data collection bridge (Terminal 1)
 python game_event_microservice/ai_bridge_fastapi.py
 
-# 3. Launch AI demo (in new terminal)
+# 3. Start AI model server (Terminal 2)
+python ai_model_server.py
+
+# 4. Start demo frontend (Terminal 3)
 npm run demo
 ```
 
@@ -137,18 +140,25 @@ Navigate to `http://localhost:8000`
 
 ### 2. Backend Setup (Required for AI Demo - Optional for basic game)
 
-Dependencies are already installed if you ran the installation above.
+The AI demo uses **two separate servers** for clean separation of concerns:
 
-Start the AI bridge server:
+#### **Data Collection Bridge** (Port 8765)
 ```bash
 python game_event_microservice/ai_bridge_fastapi.py
 ```
-
-The backend runs on `http://localhost:8765` and provides:
-- 🤖 **AI tactical suggestions** with real-time analysis
+Provides:
 - 📸 **Screenshot capture and storage** for training data
 - 📊 **Game event logging** to ChromaDB
 - 🔍 **Semantic search capabilities** for game analysis
+
+#### **AI Model Server** (Port 8766)
+```bash
+python ai_model_server.py
+```
+Provides:
+- 🤖 **Fine-tuned Phi-3.5 model serving** for tactical suggestions
+- 🔄 **Automatic fallback** to rule-based system
+- 🖥️ **Device auto-detection** (CUDA/MPS/CPU)
 
 ### 3. Training Data Generation (Optional - for AI assistant development)
 
@@ -299,6 +309,7 @@ Vibe-Code-Adaptive-Game-AI/
 ├── training_visualizer.py   # Visualization system
 ├── test_visualization.py    # Demo visualization script
 ├── demo.html               # 🎯 AI-enhanced demo interface
+├── ai_model_server.py      # 🤖 Separate AI model server (Port 8766)
 ├── src/
 │   ├── main.js             # Original game logic
 │   └── demo.js             # 🤖 AI demo with suggestions

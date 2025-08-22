@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "dev": "http-server -c-1 -p 5173",
-    "demo": "echo '🎯 Starting AI Demo...' && echo 'Game: http://localhost:5173/demo.html' && echo 'Backend: Make sure to run: python game_event_microservice/ai_bridge_fastapi.py' && http-server -c-1 -p 5173"
+    "demo": "http-server -c-1 -p 5173"
   },
   "keywords": [],
   "author": "",
