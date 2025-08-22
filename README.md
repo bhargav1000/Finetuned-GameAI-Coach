@@ -140,18 +140,67 @@ This creates:
 
 Fine-tune a Phi-3.5 model using your collected training data:
 ```bash
+# Install visualization dependencies
+pip install matplotlib seaborn
+
+# Run fine-tuning with integrated visualization
 python finetune_phi_model.py
+
+# Optional: Test visualization system
+python test_visualization.py
 ```
 
 This will:
 - 📥 Download Phi-3.5-mini-instruct model
 - 🔧 Apply LoRA fine-tuning with your 11,741+ examples
+- 📊 Generate real-time training visualizations
 - 💾 Save fine-tuned model for tactical advice generation
 - 🧪 Test model with sample game scenarios
 
 **Hardware Requirements:**
 - **Recommended**: 8GB+ VRAM (NVIDIA/AMD) or Apple Silicon Mac
 - **Minimum**: 16GB+ RAM for CPU-only training
+
+### Training Visualization System
+
+The fine-tuning process includes comprehensive progress monitoring:
+
+#### 📊 **Generated Charts**
+- `training_progress_YYYYMMDD_HHMMSS.png` - Loss curves & learning rate
+- `gradient_norms_YYYYMMDD_HHMMSS.png` - Gradient flow monitoring  
+- `training_summary_YYYYMMDD_HHMMSS.png` - 4-panel comprehensive view
+- `training_metrics_YYYYMMDD_HHMMSS.json` - Raw metrics for analysis
+
+#### 🎯 **Visualization Features**
+- **Real-time Loss Tracking**: Training and validation loss curves
+- **Learning Rate Schedule**: Visual confirmation of LR decay
+- **Gradient Monitoring**: Detect vanishing/exploding gradients
+- **Training Timeline**: Loss progression vs wall-clock time
+- **Session Management**: Timestamp-based file organization
+- **Custom Analysis**: JSON export for further investigation
+
+#### 🔄 **Integration**
+- **Auto-generated**: Charts update every 5 training steps
+- **Unsloth + Transformers**: Works with both training pipelines
+- **Mac Optimized**: MPS acceleration with float16 compatibility
+- **Final Summary**: Comprehensive metrics display on completion
+
+Example custom analysis:
+```python
+import json
+import matplotlib.pyplot as plt
+
+# Load training session data
+with open('train_visualizations/training_metrics_YYYYMMDD_HHMMSS.json', 'r') as f:
+    data = json.load(f)
+
+# Plot custom analysis
+steps = data['metrics']['steps']
+loss = data['metrics']['train_loss']
+plt.plot(steps, loss)
+plt.title('Training Loss Progression')
+plt.show()
+```
 
 ## Game Interface
 
@@ -199,7 +248,11 @@ Vibe-Code-Adaptive-Game-AI/
 ├── training_data/           # Generated training datasets
 │   ├── [session_folders]/   # Screenshots, metadata, training data
 │   └── summary/             # Aggregated datasets and statistics
+├── train_visualizations/    # Training progress charts and metrics
 ├── generate_training_data.py # Training data generation script
+├── finetune_phi_model.py    # Phi-3.5 model fine-tuning
+├── training_visualizer.py   # Visualization system
+├── test_visualization.py    # Demo visualization script
 ├── heroknight.json          # Hero AI configuration
 ├── pknight.json            # Purple knight AI configuration
 └── index.html              # Game interface with debug panels

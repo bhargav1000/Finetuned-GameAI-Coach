@@ -30,6 +30,15 @@ from typing import Dict, List, Optional
 import logging
 from tqdm.auto import tqdm
 
+# Import visualization components
+try:
+    from training_visualizer import TrainingVisualizer, CustomTrainingCallback, MATPLOTLIB_AVAILABLE
+except ImportError:
+    print("⚠️ training_visualizer.py not found. Creating basic visualization...")
+    MATPLOTLIB_AVAILABLE = False
+    TrainingVisualizer = None
+    CustomTrainingCallback = None
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -134,6 +143,13 @@ class PhiGameAssistantTrainer:
             "eval_steps": 25 if DEVICE == "cpu" else 50,
             "save_total_limit": 3,
         }
+        
+        # Initialize visualizer
+        self.visualizer = TrainingVisualizer() if (MATPLOTLIB_AVAILABLE and TrainingVisualizer) else None
+        if self.visualizer:
+            print(f"📊 Training visualization enabled. Charts will be saved to: {self.visualizer.output_dir}")
+        else:
+            print("⚠️ Training visualization disabled (matplotlib not available).")
         
         # LoRA configuration (optimized for Phi-3.5)
         self.lora_config = {
@@ -359,6 +375,11 @@ Game State: {example['input']}<|end|>
         
         from trl import SFTTrainer
         
+        # Create custom callback for visualization
+        callbacks = []
+        if self.visualizer and CustomTrainingCallback:
+            callbacks.append(CustomTrainingCallback(self.visualizer, update_frequency=5))
+        
         trainer = SFTTrainer(
             model=self.model,
             tokenizer=self.tokenizer,
@@ -386,7 +407,10 @@ Game State: {example['input']}<|end|>
                 save_total_limit=self.training_config["save_total_limit"],
                 eval_strategy="no",  # No validation set for now
                 report_to="none",  # Disable wandb/tensorboard
+                logging_first_step=True,
+                logging_nan_inf_filter=False,
             ),
+            callbacks=callbacks,
         )
         
         # Train the model
@@ -394,6 +418,17 @@ Game State: {example['input']}<|end|>
         
         logger.info("🎉 Training completed!")
         logger.info(f"Training stats: {trainer_stats}")
+        
+        # Finalize visualizations
+        if self.visualizer:
+            self.visualizer.finalize_visualization()
+            print(f"\n📊 TRAINING SUMMARY")
+            print(f"{'='*50}")
+            print(f"🕒 Total Training Time: {trainer_stats.metrics.get('train_runtime', 0):.2f} seconds")
+            print(f"📈 Final Training Loss: {trainer_stats.metrics.get('train_loss', 'N/A')}")
+            print(f"⚡ Training Samples/Second: {trainer_stats.metrics.get('train_samples_per_second', 'N/A')}")
+            print(f"🎯 Steps Completed: {trainer_stats.metrics.get('train_steps', 'N/A')}")
+            print(f"📊 Charts saved to: {self.visualizer.output_dir}")
         
         return trainer
 
@@ -406,6 +441,11 @@ Game State: {example['input']}<|end|>
             tokenizer=self.tokenizer,
             mlm=False,
         )
+        
+        # Create custom callback for visualization
+        callbacks = []
+        if self.visualizer and CustomTrainingCallback:
+            callbacks.append(CustomTrainingCallback(self.visualizer, update_frequency=5))
         
         # Training arguments
         training_args = TrainingArguments(
@@ -426,6 +466,8 @@ Game State: {example['input']}<|end|>
             save_total_limit=self.training_config["save_total_limit"],
             eval_strategy="no",
             report_to="none",
+            logging_first_step=True,
+            logging_nan_inf_filter=False,
         )
         
         # Create trainer
@@ -434,6 +476,7 @@ Game State: {example['input']}<|end|>
             args=training_args,
             train_dataset=dataset,
             data_collator=data_collator,
+            callbacks=callbacks,
         )
         
         # Train
@@ -441,6 +484,17 @@ Game State: {example['input']}<|end|>
         
         logger.info("🎉 Training completed!")
         logger.info(f"Training stats: {trainer_stats}")
+        
+        # Finalize visualizations
+        if self.visualizer:
+            self.visualizer.finalize_visualization()
+            print(f"\n📊 TRAINING SUMMARY")
+            print(f"{'='*50}")
+            print(f"🕒 Total Training Time: {trainer_stats.metrics.get('train_runtime', 0):.2f} seconds")
+            print(f"📈 Final Training Loss: {trainer_stats.metrics.get('train_loss', 'N/A')}")
+            print(f"⚡ Training Samples/Second: {trainer_stats.metrics.get('train_samples_per_second', 'N/A')}")
+            print(f"🎯 Steps Completed: {trainer_stats.metrics.get('train_steps', 'N/A')}")
+            print(f"📊 Charts saved to: {self.visualizer.output_dir}")
         
         return trainer
 
