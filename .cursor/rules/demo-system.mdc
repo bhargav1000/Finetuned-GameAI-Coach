@@ -1,0 +1,136 @@
+---
+description: AI Demo System with Live Tactical Suggestions
+alwaysApply: true
+globs:
+  - "demo.html"
+  - "src/demo.js"
+  - "game_event_microservice/ai_bridge_fastapi.py"
+---
+
+# AI Demo System
+
+## Overview
+
+The demo system provides a real-time AI coaching experience alongside the fighting game, featuring live tactical suggestions and game state analysis.
+
+## Core Components
+
+### Demo Files
+- **`demo.html`** - AI-enhanced interface with suggestions panel
+- **`src/demo.js`** - Copy of main.js with AI integration
+- **Original files untouched** - main.js and index.html preserved
+
+### Separated Backend Architecture
+- **Data Collection Bridge**: `game_event_microservice/ai_bridge_fastapi.py` (Port 8765)
+  - Screenshots and game events → ChromaDB
+  - Training data collection only
+- **AI Model Server**: `ai_model_server.py` (Port 8766)
+  - Fine-tuned Phi-3.5 model serving
+  - Real-time tactical suggestions
+  - Fallback to rule-based system
+
+## Interface Features
+
+### Right Panel Components
+- **🎯 Current Suggestion** - Latest AI tactical advice
+- **📊 Game State Analysis** - Live health/stamina bars and metrics
+- **📝 Suggestion History** - Chronological advice tracking
+- **🎮 Demo Controls** - Manual/auto suggestion toggles
+
+### AI Suggestion Categories
+1. **Health-Based**: Critical health warnings, advantage notifications
+2. **Distance-Based**: Close combat, medium range, far engagement advice
+3. **Phase-Based**: Early game, mid game, critical phase strategies
+4. **Stamina-Based**: Energy management recommendations
+5. **Action-Based**: Movement and combat timing suggestions
+
+## Launch Commands
+
+### Demo Mode (3 Steps)
+```bash
+# Step 1: Start data collection bridge
+python game_event_microservice/ai_bridge_fastapi.py
+
+# Step 2: Start AI model server (in new terminal)
+python ai_model_server.py
+
+# Step 3: Start demo frontend (in new terminal)
+npm run demo
+```
+Navigate to: `http://localhost:5173/demo.html`
+
+### Original Game
+```bash
+npm run dev                     # Start original game
+# Navigate to: http://localhost:5173
+```
+
+## Development Guidelines
+
+### Demo.js Modifications
+- **Keep main.js untouched** - Always reference but never modify
+- **AI Integration Points**: 
+  - `requestAISuggestion()` - Manual suggestion requests
+  - `updateDemoInterface()` - Live UI updates
+  - `getCurrentGameStateString()` - State serialization
+
+### AI Model Server (ai_model_server.py)
+- **Port**: 8766 (separate from data bridge)
+- **Input**: Game state string with health, stamina, distance, phase
+- **Model**: Fine-tuned Phi-3.5-mini-instruct for tactical advice
+- **Fallback**: Rule-based suggestions when model unavailable
+- **Device Detection**: Auto-detects CUDA/MPS/CPU
+
+### Data Collection Bridge (ai_bridge_fastapi.py)
+- **Port**: 8765 (data collection only)
+- **Purpose**: Screenshots, ChromaDB, training data
+- **No AI suggestions** - purely for data collection
+
+### Interface Updates
+- **Real-time State**: Health bars, distance indicators, phase tracking
+- **Suggestion Display**: Current advice with confidence rating
+- **History Management**: Chronological tracking with timestamps
+- **Control Integration**: Auto/manual modes with visual feedback
+
+## Testing Protocol
+
+1. **Start Data Bridge**: `python game_event_microservice/ai_bridge_fastapi.py`
+2. **Start AI Model Server**: `python ai_model_server.py` (new terminal)
+3. **Check Model Loading**: Verify fine-tuned model loads or fallback activates
+4. **Demo Launch**: `npm run demo` (new terminal)
+5. **Interface Check**: Verify right panel loads correctly
+6. **AI Suggestions**: Test both manual and auto modes
+7. **Model Verification**: Check if using fine-tuned vs rule-based
+8. **Original Preservation**: Verify `npm run dev` still works
+
+## Integration Notes
+
+### Fine-tuned Model Integration
+- **Automatic Detection**: Looks for `model/fine_tuned/` directory
+- **Device Auto-selection**: CUDA > MPS > CPU based on availability
+- **Prompt Format**: Uses Phi-3.5 chat template with system message
+- **Fallback System**: Automatic rule-based fallback if model fails
+- **Confidence Scoring**: "High" for model, "Medium/Low" for rules
+
+### UI Customization
+- Modern gradient design with tech aesthetic
+- Responsive layout for different screen sizes
+- Smooth animations and transitions
+- Accessibility considerations for color contrast
+
+## Troubleshooting
+
+### Common Issues
+- **AI Model Offline**: Suggestions fall back to rule-based system automatically
+- **Port 8766 in Use**: AI model server port conflict
+- **Model Loading Failed**: Check `model/fine_tuned/` directory exists
+- **CORS Errors**: Both servers (8765, 8766) have CORS enabled
+- **Interface Not Loading**: Verify demo.html connects to port 8766
+
+### Debug Tools
+- **Browser Console**: JavaScript errors and network requests
+- **Data Bridge Terminal** (8765): Data collection logs
+- **AI Model Terminal** (8766): Model inference logs and fallback status
+- **Network Tab**: Check requests to both 8765 (data) and 8766 (AI)
+- **Game Debug Keys**: (F2, X) still functional in demo
+- **Model Info Endpoint**: `GET http://localhost:8766/model_info`

@@ -1,6 +1,6 @@
 ---
 description: Model Fine-tuning System for Fighting Game AI Assistant
-globs: ["finetune_*.py", "phi_game_assistant_model/**", "**/*fine*tune*", "training_data/**"]
+globs: ["finetune_*.py", "training_visualizer.py", "test_visualization.py", "phi_game_assistant_model/**", "**/*fine*tune*", "training_data/**", "train_visualizations/**"]
 alwaysApply: false
 ---
 
@@ -97,6 +97,36 @@ Game State: {example['input']}<|end|>
 }
 ```
 
+## Training Visualization System
+
+### Real-time Progress Monitoring
+The fine-tuning process includes comprehensive visualization and metrics tracking:
+
+```python
+# Training visualizations are automatically generated
+├── train_visualizations/
+│   ├── training_progress_YYYYMMDD_HHMMSS.png    # Loss curves & learning rate
+│   ├── gradient_norms_YYYYMMDD_HHMMSS.png       # Gradient flow monitoring
+│   ├── training_summary_YYYYMMDD_HHMMSS.png     # 4-panel comprehensive view
+│   ├── training_metrics_YYYYMMDD_HHMMSS.json    # Raw metrics for analysis
+│   └── README.md                                # Documentation
+```
+
+### Visualization Features
+- **Real-time Loss Tracking**: Training and validation loss curves
+- **Learning Rate Schedule**: Visual confirmation of LR decay
+- **Gradient Monitoring**: Detect vanishing/exploding gradients
+- **Training Timeline**: Loss progression vs wall-clock time
+- **JSON Export**: Raw metrics for custom analysis
+- **Session Management**: Timestamp-based file organization
+
+### Integration
+Visualization is automatically integrated into both training pipelines:
+- **Unsloth Trainer**: Custom callbacks for real-time updates
+- **Transformers Trainer**: Built-in logging with visual output
+- **Update Frequency**: Charts refresh every 5 training steps
+- **Final Summary**: Comprehensive metrics display on completion
+
 ## Fine-tuning Process
 
 ### 1. Pre-Training Validation
@@ -120,10 +150,25 @@ print(f'Training examples: {count}')
 
 ### 3. Training Execution
 ```bash
+# Install visualization dependencies
+pip install matplotlib seaborn
+
+# Run fine-tuning with integrated visualization
 python finetune_phi_model.py
+
+# Optional: Test visualization system
+python test_visualization.py
 ```
 
-### 4. Output Structure
+### 4. Training Monitoring
+During training, monitor progress through:
+- **Console Output**: Real-time loss and metrics
+- **Chart Updates**: Visual progress every 5 steps  
+- **Session Tracking**: Timestamped visualization files
+- **Memory Usage**: VRAM and system memory monitoring
+- **Training Speed**: Samples per second throughput
+
+### 5. Output Structure
 ```
 phi_game_assistant_model/
 ├── adapter_config.json          # LoRA adapter configuration
@@ -140,8 +185,10 @@ phi_game_assistant_model/
 ### Training Metrics
 - **Loss Reduction**: Expect 40-60% loss reduction over 100 steps
 - **Convergence**: Model should converge within 50-100 steps
-- **Memory Usage**: 6-8GB VRAM with optimizations
+- **Memory Usage**: 6-8GB VRAM with optimizations (visualized in real-time)
 - **Training Time**: 30-60 minutes depending on hardware
+- **Gradient Health**: Monitor for stable gradient norms (10^-3 to 10^1 range)
+- **Learning Rate**: Verify proper decay schedule visualization
 
 ### Quality Indicators
 - **Tactical Relevance**: Responses should address specific game state
@@ -205,6 +252,26 @@ test_cases = [
 ]
 ```
 
+### Training Analysis
+```python
+# Analyze training metrics from visualization data
+import json
+import matplotlib.pyplot as plt
+
+# Load training session data
+with open('train_visualizations/training_metrics_YYYYMMDD_HHMMSS.json') as f:
+    metrics = json.load(f)
+
+# Custom analysis
+steps = metrics['metrics']['steps']
+loss = metrics['metrics']['train_loss']
+plt.plot(steps, loss)
+plt.title('Training Loss Progression')
+plt.xlabel('Steps')
+plt.ylabel('Loss')
+plt.show()
+```
+
 ### Manual Validation
 - Test across all game phases (early, mid, late, critical)
 - Verify advice quality for different health/stamina combinations
@@ -239,6 +306,8 @@ test_cases = [
 - **Accuracy**: User feedback on advice quality
 - **Usage Patterns**: Most requested scenarios
 - **Model Drift**: Performance degradation over time
+- **Training History**: Archived visualization data for comparison
+- **Resource Usage**: GPU memory and training efficiency trends
 
 ### Continuous Improvement
 - **Data Collection**: Keep gathering new gameplay data
@@ -253,6 +322,8 @@ test_cases = [
 - **Slow Training**: Use Unsloth, enable mixed precision training
 - **Poor Quality**: Increase training steps, check data quality
 - **Overfitting**: Add regularization, reduce learning rate
+- **Visualization Errors**: Install matplotlib/seaborn, check system compatibility
+- **Gradient Issues**: Monitor gradient norm charts for exploding/vanishing gradients
 
 ### Model Quality Checks
 ```python
@@ -270,10 +341,12 @@ def validate_model_output(model_response):
 ## Success Metrics
 
 ### Technical Metrics
-- **Training Loss**: < 1.0 after convergence
+- **Training Loss**: < 1.0 after convergence (visualized in real-time)
 - **Inference Speed**: < 100ms per request
 - **Memory Usage**: < 8GB VRAM for inference
 - **Model Size**: < 3GB for LoRA adapter
+- **Training Efficiency**: Stable gradient norms, smooth loss curves
+- **Visualization Coverage**: Complete training session documentation
 
 ### User Experience Metrics
 - **Advice Relevance**: 90%+ situations addressed appropriately

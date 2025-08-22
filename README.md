@@ -88,7 +88,36 @@ python fix_phi_compatibility.py
 
 ## Quick Start
 
-### 1. Frontend Setup (Required)
+### 🎯 AI Demo Mode (Recommended)
+
+Experience the complete AI-enhanced fighting game with real-time tactical suggestions:
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start data collection bridge (Terminal 1)
+python game_event_microservice/ai_bridge_fastapi.py
+
+# 3. Start AI model server (Terminal 2)
+python ai_model_server.py
+
+# 4. Start demo frontend (Terminal 3)
+npm run demo
+```
+
+Navigate to `http://localhost:5173/demo.html`
+
+**✨ Demo Features:**
+- 🤖 **Real-time AI coaching** with tactical suggestions
+- 📊 **Live game analysis** (health, stamina, distance, phase)
+- ⚡ **Auto/manual suggestion modes**
+- 📝 **Suggestion history tracking**
+- 🎨 **Modern interface** with AI assistant panel
+
+### 🎮 Original Game Mode
+
+For the standard game experience without AI assistance:
 
 **Option A: Using npm (Recommended)**
 ```bash
@@ -109,19 +138,27 @@ python3 -m http.server
 ```
 Navigate to `http://localhost:8000`
 
-### 2. Backend Setup (Optional - for data collection)
+### 2. Backend Setup (Required for AI Demo - Optional for basic game)
 
-Dependencies are already installed if you ran the installation above.
+The AI demo uses **two separate servers** for clean separation of concerns:
 
-Start the AI bridge server:
+#### **Data Collection Bridge** (Port 8765)
 ```bash
 python game_event_microservice/ai_bridge_fastapi.py
 ```
+Provides:
+- 📸 **Screenshot capture and storage** for training data
+- 📊 **Game event logging** to ChromaDB
+- 🔍 **Semantic search capabilities** for game analysis
 
-The backend runs on `http://localhost:8765` and provides:
-- Screenshot capture and storage
-- Game event logging to ChromaDB
-- Semantic search capabilities for game analysis
+#### **AI Model Server** (Port 8766)
+```bash
+python ai_model_server.py
+```
+Provides:
+- 🤖 **Fine-tuned Phi-3.5 model serving** for tactical suggestions
+- 🔄 **Automatic fallback** to rule-based system
+- 🖥️ **Device auto-detection** (CUDA/MPS/CPU)
 
 ### 3. Training Data Generation (Optional - for AI assistant development)
 
@@ -140,12 +177,20 @@ This creates:
 
 Fine-tune a Phi-3.5 model using your collected training data:
 ```bash
+# Install visualization dependencies
+pip install matplotlib seaborn
+
+# Run fine-tuning with integrated visualization
 python finetune_phi_model.py
+
+# Optional: Test visualization system
+python test_visualization.py
 ```
 
 This will:
 - 📥 Download Phi-3.5-mini-instruct model
 - 🔧 Apply LoRA fine-tuning with your 11,741+ examples
+- 📊 Generate real-time training visualizations
 - 💾 Save fine-tuned model for tactical advice generation
 - 🧪 Test model with sample game scenarios
 
@@ -153,17 +198,76 @@ This will:
 - **Recommended**: 8GB+ VRAM (NVIDIA/AMD) or Apple Silicon Mac
 - **Minimum**: 16GB+ RAM for CPU-only training
 
+### Training Visualization System
+
+The fine-tuning process includes comprehensive progress monitoring:
+
+#### 📊 **Generated Charts**
+- `training_progress_YYYYMMDD_HHMMSS.png` - Loss curves & learning rate
+- `gradient_norms_YYYYMMDD_HHMMSS.png` - Gradient flow monitoring  
+- `training_summary_YYYYMMDD_HHMMSS.png` - 4-panel comprehensive view
+- `training_metrics_YYYYMMDD_HHMMSS.json` - Raw metrics for analysis
+
+#### 🎯 **Visualization Features**
+- **Real-time Loss Tracking**: Training and validation loss curves
+- **Learning Rate Schedule**: Visual confirmation of LR decay
+- **Gradient Monitoring**: Detect vanishing/exploding gradients
+- **Training Timeline**: Loss progression vs wall-clock time
+- **Session Management**: Timestamp-based file organization
+- **Custom Analysis**: JSON export for further investigation
+
+#### 🔄 **Integration**
+- **Auto-generated**: Charts update every 5 training steps
+- **Unsloth + Transformers**: Works with both training pipelines
+- **Mac Optimized**: MPS acceleration with float16 compatibility
+- **Final Summary**: Comprehensive metrics display on completion
+
+Example custom analysis:
+```python
+import json
+import matplotlib.pyplot as plt
+
+# Load training session data
+with open('train_visualizations/training_metrics_YYYYMMDD_HHMMSS.json', 'r') as f:
+    data = json.load(f)
+
+# Plot custom analysis
+steps = data['metrics']['steps']
+loss = data['metrics']['train_loss']
+plt.plot(steps, loss)
+plt.title('Training Loss Progression')
+plt.show()
+```
+
 ## Game Interface
 
-### AI-Controlled Combat
+### 🎯 AI Demo Mode Interface
+
+**Left Side - Game Arena:**
+- Autonomous AI vs AI combat with real-time learning
+- Debug controls: **X** (collision boundaries), **F2** (physics), **P** (screenshot)
+
+**Right Side - AI Assistant Panel:**
+- 🤖 **AI Tactical Coach** - Real-time fighting suggestions
+- 📊 **Live Game Analysis** - Health/stamina bars, distance, phase tracking
+- 📝 **Suggestion History** - Chronological advice log
+- 🎮 **Demo Controls** - Manual suggestions, auto-mode toggle
+
+**Bottom Panel - Live Events:**
+- Combat event stream with JSON formatting
+- Real-time action logging and state changes
+
+### 🎮 Original Game Interface
+
+**AI-Controlled Combat:**
 The game runs **completely autonomously** - both knights are controlled by AI agents that learn and adapt their fighting strategies in real-time. No manual input is required for gameplay.
 
-### Debug Controls
+**Debug Controls:**
 - **X**: Toggle collision boundary visualization
 - **F2**: Toggle physics body debug display
 - **P**: Manual screenshot capture
 
-### Debug Panels
+**Debug Panels:**
 - **Q-Learning Panel** (right side): Real-time Q-values for knight actions
 - **Events Panel** (bottom): Live combat event log
 - **Health/Stamina Bars**: Visual representation of knight status
@@ -199,10 +303,19 @@ Vibe-Code-Adaptive-Game-AI/
 ├── training_data/           # Generated training datasets
 │   ├── [session_folders]/   # Screenshots, metadata, training data
 │   └── summary/             # Aggregated datasets and statistics
+├── train_visualizations/    # Training progress charts and metrics
 ├── generate_training_data.py # Training data generation script
+├── finetune_phi_model.py    # Phi-3.5 model fine-tuning
+├── training_visualizer.py   # Visualization system
+├── test_visualization.py    # Demo visualization script
+├── demo.html               # 🎯 AI-enhanced demo interface
+├── ai_model_server.py      # 🤖 Separate AI model server (Port 8766)
+├── src/
+│   ├── main.js             # Original game logic
+│   └── demo.js             # 🤖 AI demo with suggestions
 ├── heroknight.json          # Hero AI configuration
 ├── pknight.json            # Purple knight AI configuration
-└── index.html              # Game interface with debug panels
+└── index.html              # Original game interface
 ```
 
 ## Research Applications

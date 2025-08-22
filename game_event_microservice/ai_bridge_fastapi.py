@@ -81,6 +81,8 @@ class GameEvent(BaseModel):
     event_type: str
     timestamp: int
     game_time: float
+
+
     message: str
 
 # Global queue for screenshot processing
@@ -224,5 +226,15 @@ async def process_game_state_snapshot(snapshot: GameStateSnapshot):
         print(f"Error processing game state snapshot: {e}")
         raise HTTPException(status_code=500, detail="Error processing snapshot")
 
+
+
 if __name__ == "__main__":
+    print("🚀 Starting Vibe Code AI Bridge...")
+    print("📊 ChromaDB initialized")
+    print("🔗 Available endpoints:")
+    print("   POST /game_state_snapshot - Store game screenshots and events")
+    print("   POST /game_event - Handle game events")
+    print("   POST /query - Query collected events")
+    print("   GET /collection_stats - View collection statistics")
+    print("🌐 Server starting on http://localhost:8765")
     uvicorn.run(app, host="localhost", port=8765)

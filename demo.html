@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Vibe Code - AI Demo | Fine-tuned Fighting Assistant</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #000; 
+            display: flex; 
+            flex-direction: column; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        #main-content { 
+            display: flex; 
+            flex: 1; 
+        }
+        
+        #game-container { 
+            flex: 1; 
+        }
+        
+        #ai-assistant-panel { 
+            width: 450px; 
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #fff; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            border-left: 3px solid #00d4ff;
+            overflow-y: auto;
+            max-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel-header {
+            background: linear-gradient(90deg, #00d4ff 0%, #0099cc 100%);
+            color: #000;
+            padding: 15px 20px;
+            font-weight: bold;
+            font-size: 18px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 212, 255, 0.3);
+        }
+        
+        .panel-section {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .section-title {
+            color: #00d4ff;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        #ai-suggestions {
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            min-height: 120px;
+            border-left: 4px solid #00d4ff;
+            position: relative;
+        }
+        
+        .suggestion-text {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #e0e0e0;
+            font-style: italic;
+        }
+        
+        .suggestion-confidence {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: rgba(0, 212, 255, 0.2);
+            color: #00d4ff;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0, 212, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #00d4ff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .game-state {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .state-label {
+            color: #00d4ff;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        .state-value {
+            color: #fff;
+        }
+        
+        .health-bar, .stamina-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            margin: 5px 0;
+            overflow: hidden;
+        }
+        
+        .health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444 0%, #ff6666 100%);
+            transition: width 0.3s ease;
+        }
+        
+        .stamina-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4444ff 0%, #6666ff 100%);
+            transition: width 0.3s ease;
+        }
+        
+        .suggestion-history {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+        }
+        
+        .suggestion-item {
+            background: rgba(255, 255, 255, 0.05);
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            border-left: 3px solid #00d4ff;
+        }
+        
+        .suggestion-timestamp {
+            color: #888;
+            font-size: 10px;
+            float: right;
+        }
+        
+        #demo-controls {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px 20px;
+            text-align: center;
+        }
+        
+        .demo-button {
+            background: linear-gradient(45deg, #00d4ff 0%, #0099cc 100%);
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 25px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .demo-button:hover {
+            background: linear-gradient(45deg, #0099cc 0%, #007799 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 212, 255, 0.4);
+        }
+        
+        .demo-button:disabled {
+            background: #666;
+            color: #999;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        #events-panel {
+            height: 150px;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+            color: #00ff88;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            padding: 10px;
+            border-top: 2px solid #00ff88;
+            overflow-y: auto;
+        }
+        
+        #events-panel h3 { 
+            color: #00ff88; 
+            margin: 0 0 10px 0; 
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        .event-item {
+            background: rgba(0, 255, 136, 0.1);
+            margin: 5px 0;
+            padding: 8px;
+            border-left: 3px solid #00ff88;
+            white-space: pre-wrap;
+            font-size: 10px;
+            border-radius: 3px;
+        }
+        
+        .model-status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            border: 2px solid #00ff00;
+            z-index: 1000;
+        }
+        
+        .model-status.loading {
+            color: #ffaa00;
+            border-color: #ffaa00;
+        }
+        
+        .model-status.error {
+            color: #ff4444;
+            border-color: #ff4444;
+        }
+    </style>
+    <script src="/node_modules/phaser/dist/phaser.js"></script>
+</head>
+<body>
+    <div class="model-status" id="model-status">🤖 AI Assistant Ready</div>
+    
+    <div id="main-content">
+        <div id="game-container"></div>
+        
+        <div id="ai-assistant-panel">
+            <div class="panel-header">
+                🎯 AI Fighting Coach | Phi-3.5 Fine-tuned
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title">💡 Current Suggestion</div>
+                <div id="ai-suggestions">
+                    <div class="suggestion-confidence" id="suggestion-confidence">Ready</div>
+                    <div class="suggestion-text" id="suggestion-text">
+                        🤖 AI Assistant initialized. Start playing to receive tactical suggestions!
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title">📊 Game State Analysis</div>
+                <div class="game-state">
+                    <div><span class="state-label">Hero Health:</span><span class="state-value" id="hero-health">100%</span></div>
+                    <div class="health-bar"><div class="health-fill" id="hero-health-bar" style="width: 100%;"></div></div>
+                    
+                    <div><span class="state-label">Hero Stamina:</span><span class="state-value" id="hero-stamina">100%</span></div>
+                    <div class="stamina-bar"><div class="stamina-fill" id="hero-stamina-bar" style="width: 100%;"></div></div>
+                    
+                    <div style="margin-top: 10px;"><span class="state-label">Distance:</span><span class="state-value" id="distance-status">-</span></div>
+                    <div><span class="state-label">Phase:</span><span class="state-value" id="game-phase">Early Game</span></div>
+                    <div><span class="state-label">Situation:</span><span class="state-value" id="tactical-situation">Positioning</span></div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title">📝 Suggestion History</div>
+                <div class="suggestion-history" id="suggestion-history">
+                    <div class="suggestion-item">
+                        <span class="suggestion-timestamp">Demo Ready</span>
+                        Welcome to the AI-enhanced demo! The assistant will provide real-time tactical advice.
+                    </div>
+                </div>
+            </div>
+            
+            <div id="demo-controls">
+                <button class="demo-button" onclick="requestSuggestion()">🎯 Get Suggestion</button>
+                <button class="demo-button" onclick="clearHistory()">🗑️ Clear History</button>
+                <button class="demo-button" onclick="toggleAutoSuggestions()" id="auto-toggle">⚡ Auto: OFF</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="events-panel">
+        <h3>⚡ Live Game Events</h3>
+        <div id="events-content"></div>
+    </div>
+    
+    <canvas id="screenshot-canvas" style="display:none;"></canvas>
+    <script type="module" src="src/demo.js"></script>
+    
+    <script>
+        // Global demo controls
+        let autoSuggestionsEnabled = false;
+        let suggestionHistory = [];
+        
+        function requestSuggestion() {
+            // This will be called from demo.js
+            if (window.demoGame && window.demoGame.scene.scenes[0]) {
+                window.demoGame.scene.scenes[0].requestAISuggestion();
+            }
+        }
+        
+        function clearHistory() {
+            suggestionHistory = [];
+            document.getElementById('suggestion-history').innerHTML = '<div class="suggestion-item"><span class="suggestion-timestamp">Cleared</span>History cleared.</div>';
+        }
+        
+        function toggleAutoSuggestions() {
+            autoSuggestionsEnabled = !autoSuggestionsEnabled;
+            const button = document.getElementById('auto-toggle');
+            button.textContent = autoSuggestionsEnabled ? '⚡ Auto: ON' : '⚡ Auto: OFF';
+            button.style.background = autoSuggestionsEnabled ? 
+                'linear-gradient(45deg, #00ff88 0%, #00cc66 100%)' : 
+                'linear-gradient(45deg, #00d4ff 0%, #0099cc 100%)';
+        }
+        
+        function addSuggestionToHistory(suggestion, confidence) {
+            const timestamp = new Date().toLocaleTimeString();
+            suggestionHistory.unshift({ suggestion, confidence, timestamp });
+            
+            // Keep only last 10 suggestions
+            if (suggestionHistory.length > 10) {
+                suggestionHistory.pop();
+            }
+            
+            // Update history display
+            const historyContainer = document.getElementById('suggestion-history');
+            historyContainer.innerHTML = suggestionHistory.map(item => 
+                `<div class="suggestion-item">
+                    <span class="suggestion-timestamp">${item.timestamp}</span>
+                    ${item.suggestion}
+                </div>`
+            ).join('');
+        }
+        
+        function updateGameState(gameData) {
+            // Update hero stats
+            document.getElementById('hero-health').textContent = `${Math.round(gameData.heroHealth * 100)}%`;
+            document.getElementById('hero-stamina').textContent = `${Math.round(gameData.heroStamina * 100)}%`;
+            document.getElementById('hero-health-bar').style.width = `${gameData.heroHealth * 100}%`;
+            document.getElementById('hero-stamina-bar').style.width = `${gameData.heroStamina * 100}%`;
+            
+            // Update tactical info
+            document.getElementById('distance-status').textContent = gameData.distance || '-';
+            document.getElementById('game-phase').textContent = gameData.phase || 'Unknown';
+            document.getElementById('tactical-situation').textContent = gameData.situation || 'Analyzing...';
+        }
+        
+        function updateAISuggestion(suggestion, confidence = 'Medium') {
+            document.getElementById('suggestion-text').textContent = suggestion;
+            document.getElementById('suggestion-confidence').textContent = confidence;
+            
+            // Add to history
+            addSuggestionToHistory(suggestion, confidence);
+        }
+        
+        function setModelStatus(status, type = 'ready') {
+            const statusEl = document.getElementById('model-status');
+            statusEl.textContent = status;
+            statusEl.className = `model-status ${type}`;
+        }
+        
+        // Export functions for demo.js to use
+        window.demoInterface = {
+            updateGameState,
+            updateAISuggestion,
+            setModelStatus,
+            autoSuggestionsEnabled: () => autoSuggestionsEnabled
+        };
+    </script>
+</body>
+</html>
