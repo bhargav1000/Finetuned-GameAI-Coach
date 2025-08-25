@@ -5,7 +5,7 @@ This project is an **AI assistant designed for the [Vibe Coded AI game](https://
 ## 🎮 Demo Video
 
 <video width="100%" controls>
-  <source src="https://raw.githubusercontent.com/bhargav1000/Finetuned-GameAI-Coach/main/assets/Demo1.mov" type="video/mp4">
+  <source src="https://raw.githubusercontent.com/bhargav1000/Finetuned-GameAI-Coach/main/assets/Demo1.mov" type="video/quicktime">
   Your browser does not support the video tag.
 </video>
 
