@@ -4,7 +4,7 @@ This project is an **AI assistant designed for the [Vibe Coded AI game](https://
 
 ## 🎮 Demo Video
 
-![Demo](https://raw.githubusercontent.com/bhargav1000/Custom-Adaptive-GameAI/dev/assets/Demo1.gif)
+![Demo](https://raw.githubusercontent.com/bhargav1000/Custom-Adaptive-GameAI/main/assets/Demo1.gif)
 
 *Watch the AI-enhanced fighting game in action with player-controlled hero vs AI-controlled Purple Knight, featuring real-time tactical suggestions from the fine-tuned Phi-3.5 model!*
 
