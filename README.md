@@ -42,6 +42,12 @@ This project is an **AI assistant designed for the [Vibe Coded AI game](https://
 - **Animation Consistency**: Global timing control without frame-rate overrides
 - **Data Persistence**: Q-table saving/loading for continuous learning
 
+### Game Arena
+
+![Game Arena](https://raw.githubusercontent.com/bhargav1000/Custom-Adaptive-GameAI/main/assets/game_arena.png)
+
+*The medieval boss arena where epic battles between the hero knight and AI-controlled Purple Knight take place. Features dynamic lighting, atmospheric environment, and optimized collision detection.*
+
 ## Prerequisites
 
 - **Modern web browser** (Chrome, Firefox, Safari, Edge)
@@ -62,7 +68,8 @@ git lfs install
 git clone https://huggingface.co/bhargav1000/Finetuned-Phi3.5-Custom-Game model/fine_tuned/
 ```
 
-**Model Location**: `model/fine_tuned/`
+**Model Location**: `model/fine_tuned/`  
+**Source**: [HuggingFace Model Repository](https://huggingface.co/bhargav1000/Finetuned-Phi3.5-Custom-Game)
 
 ### Training Dataset
 
@@ -75,7 +82,8 @@ mkdir -p training_data
 git clone https://huggingface.co/datasets/bhargav1000/Custom-Game-Finetune-Training-Data training_data/
 ```
 
-**Dataset Location**: `training_data/`
+**Dataset Location**: `training_data/`  
+**Source**: [HuggingFace Dataset Repository](https://huggingface.co/datasets/bhargav1000/Custom-Game-Finetune-Training-Data)
 
 ## Installation
 
@@ -151,6 +159,12 @@ Navigate to `http://localhost:5173/demo.html`
 - 🎯 **Integrated AI panel** replaces Q-Learning debug panel
 - 🧠 **Smart fallback** to rule-based suggestions if model offline
 - 🎮 **Controller Support** - keyboard and Xbox controller input
+
+### AI Interface
+
+![AI Interface](https://raw.githubusercontent.com/bhargav1000/Custom-Adaptive-GameAI/main/assets/ai_interface.png)
+
+*The integrated AI coaching interface showing real-time tactical suggestions, game state analysis, and control scheme display. Features live health/stamina tracking, distance analysis, and contextual combat advice.*
 
 **Optional: Add Data Collection**
 ```bash
