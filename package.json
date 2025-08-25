@@ -1,0 +1,20 @@
+{
+  "name": "vibe-code-game",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "dev": "http-server -c-1 -p 5173",
+    "demo": "http-server -c-1 -p 5173"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "dependencies": {
+    "matter-js": "^0.20.0",
+    "phaser": "^3.90.0"
+  }
+}

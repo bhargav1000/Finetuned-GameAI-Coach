@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Vibe Code - AI Demo | Fine-tuned Fighting Assistant</title>
+    <style>
+        body { margin: 0; background: #000; display: flex; flex-direction: column; }
+        #main-content { display: flex; flex: 1; }
+        #game-container { flex: 1; }
+        #ai-assistant-panel { 
+            width: 400px; 
+            background: #111; 
+            color: #00d4ff; 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px;
+            padding: 10px;
+            border-left: 1px solid #333;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+        
+        #ai-assistant-panel h3 { color: #ff0; margin: 10px 0 5px 0; }
+        #ai-assistant-panel .metric { margin: 5px 0; }
+        .ai-suggestion-box {
+            background: #222;
+            border: 1px solid #00d4ff;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+            min-height: 80px;
+            position: relative;
+        }
+        .suggestion-text {
+            color: #00ff88;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .suggestion-confidence {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            color: #ffaa00;
+            font-size: 10px;
+        }
+        .game-state-display {
+            background: #333;
+            border-radius: 3px;
+            padding: 8px;
+            margin: 5px 0;
+            font-size: 11px;
+        }
+        .demo-controls {
+            text-align: center;
+            padding: 10px;
+            border-top: 1px solid #444;
+        }
+        .demo-button {
+            background: #00d4ff;
+            color: #000;
+            border: none;
+            padding: 8px 15px;
+            margin: 3px;
+            border-radius: 3px;
+            font-size: 11px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+        }
+        .demo-button:hover {
+            background: #0099cc;
+        }
+        
+        #events-panel {
+            height: 200px;
+            background: #111;
+            color: #0ff;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            padding: 10px;
+            border-top: 1px solid #333;
+            overflow-y: auto;
+        }
+        #events-panel h3 { 
+            color: #ff0; 
+            margin: 0 0 10px 0; 
+        }
+        .event-item {
+            background: #222;
+            margin: 5px 0;
+            padding: 8px;
+            border-left: 3px solid #0ff;
+            white-space: pre-wrap;
+            font-size: 10px;
+        }
+    </style>
+    <script src="/node_modules/phaser/dist/phaser.js"></script>
+</head>
+<body>
+    <div id="main-content">
+        <div id="game-container"></div>
+        <div id="ai-assistant-panel">
+        <h3>🤖 AI Fighting Coach</h3>
+        <div class="metric">Model: <span id="model-status">Phi-3.5 Fine-tuned</span></div>
+        <div class="metric">Status: <span id="ai-status">Ready</span></div>
+        
+        <h3>💡 Current Suggestion</h3>
+        <div class="ai-suggestion-box">
+            <div class="suggestion-confidence" id="suggestion-confidence">Ready</div>
+            <div class="suggestion-text" id="suggestion-text">
+                🤖 AI Assistant initialized. Start playing to receive tactical suggestions!
+            </div>
+        </div>
+        
+        <h3>📊 Game Analysis</h3>
+        <div class="game-state-display">
+            <div class="metric">Hero Health: <span id="hero-health">100%</span></div>
+            <div class="metric">Hero Stamina: <span id="hero-stamina">100%</span></div>
+            <div class="metric">Distance: <span id="distance-status">-</span></div>
+            <div class="metric">Phase: <span id="game-phase">Early Game</span></div>
+        </div>
+        
+        <h3>📝 Suggestion History</h3>
+        <div id="suggestion-history" style="max-height: 120px; overflow-y: auto; background: #222; border: 1px solid #444; padding: 5px; margin: 10px 0;">
+            <div class="suggestion-item">
+                <span class="suggestion-timestamp">Ready</span>
+                AI suggestion history will appear here...
+            </div>
+        </div>
+        
+        <div class="demo-controls">
+            <button class="demo-button" onclick="toggleAutoSuggestions()" id="auto-toggle">AI Suggestions: OFF</button>
+        </div>
+        </div>
+    </div>
+    
+    <div id="events-panel">
+        <h3>⚡ Live Game Events</h3>
+        <div id="events-content"></div>
+    </div>
+    
+    <canvas id="screenshot-canvas" style="display:none;"></canvas>
+    <script type="module" src="src/demo.js"></script>
+    
+    <script>
+        // Global demo controls
+        let autoSuggestionsEnabled = false;
+        let suggestionHistory = [];
+        
+        function requestSuggestion() {
+            // This will be called from demo.js
+            if (window.demoGame && window.demoGame.scene.scenes[0]) {
+                window.demoGame.scene.scenes[0].requestAISuggestion();
+            }
+        }
+        
+        function clearHistory() {
+            suggestionHistory = [];
+            document.getElementById('suggestion-history').innerHTML = '<div class="suggestion-item"><span class="suggestion-timestamp">Cleared</span>History cleared.</div>';
+        }
+        
+        function toggleAutoSuggestions() {
+            autoSuggestionsEnabled = !autoSuggestionsEnabled;
+            const button = document.getElementById('auto-toggle');
+            button.textContent = autoSuggestionsEnabled ? 'AI Suggestions: ON' : 'AI Suggestions: OFF';
+            button.style.background = autoSuggestionsEnabled ? 
+                'linear-gradient(45deg, #00ff88 0%, #00cc66 100%)' : 
+                'linear-gradient(45deg, #00d4ff 0%, #0099cc 100%)';
+            
+            // If turning on, immediately request a suggestion
+            if (autoSuggestionsEnabled && window.demoGame && window.demoGame.scene.scenes[0]) {
+                window.demoGame.scene.scenes[0].requestAISuggestion();
+            }
+        }
+        
+        function addSuggestionToHistory(suggestion, confidence) {
+            const timestamp = new Date().toLocaleTimeString();
+            suggestionHistory.unshift({ suggestion, confidence, timestamp });
+            
+            // Keep only last 10 suggestions
+            if (suggestionHistory.length > 10) {
+                suggestionHistory.pop();
+            }
+            
+            // Update history display
+            const historyContainer = document.getElementById('suggestion-history');
+            historyContainer.innerHTML = suggestionHistory.map(item => 
+                `<div class="suggestion-item">
+                    <span class="suggestion-timestamp">${item.timestamp}</span>
+                    ${item.suggestion}
+                </div>`
+            ).join('');
+        }
+        
+        function updateGameState(gameData) {
+            // Update hero stats (safely)
+            const heroHealthEl = document.getElementById('hero-health');
+            const heroStaminaEl = document.getElementById('hero-stamina');
+            const heroHealthBarEl = document.getElementById('hero-health-bar');
+            const heroStaminaBarEl = document.getElementById('hero-stamina-bar');
+            const distanceEl = document.getElementById('distance-status');
+            const phaseEl = document.getElementById('game-phase');
+            const situationEl = document.getElementById('tactical-situation');
+            
+            if (heroHealthEl) heroHealthEl.textContent = `${Math.round(gameData.heroHealth * 100)}%`;
+            if (heroStaminaEl) heroStaminaEl.textContent = `${Math.round(gameData.heroStamina * 100)}%`;
+            if (heroHealthBarEl) heroHealthBarEl.style.width = `${gameData.heroHealth * 100}%`;
+            if (heroStaminaBarEl) heroStaminaBarEl.style.width = `${gameData.heroStamina * 100}%`;
+            
+            // Update tactical info (safely)
+            if (distanceEl) distanceEl.textContent = gameData.distance || '-';
+            if (phaseEl) phaseEl.textContent = gameData.phase || 'Unknown';
+            if (situationEl) situationEl.textContent = gameData.situation || 'Analyzing...';
+        }
+        
+        function updateAISuggestion(suggestion, confidence = 'Medium') {
+            const suggestionEl = document.getElementById('suggestion-text');
+            const confidenceEl = document.getElementById('suggestion-confidence');
+            
+            if (suggestionEl) suggestionEl.textContent = suggestion;
+            if (confidenceEl) confidenceEl.textContent = confidence;
+            
+            // Add to history
+            addSuggestionToHistory(suggestion, confidence);
+        }
+        
+        function setModelStatus(status, type = 'ready') {
+            const statusEl = document.getElementById('model-status');
+            if (statusEl) {
+                statusEl.textContent = status;
+                statusEl.className = `model-status ${type}`;
+            }
+        }
+        
+        // Export functions for demo.js to use
+        window.demoInterface = {
+            updateGameState,
+            updateAISuggestion,
+            setModelStatus,
+            autoSuggestionsEnabled: () => autoSuggestionsEnabled
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,269 @@
+---
+description: AI Demo System with Live Tactical Suggestions
+alwaysApply: true
+globs:
+  - "demo.html"
+  - "src/demo.js"
+  - "game_event_microservice/ai_bridge_fastapi.py"
+---
+
+# AI Demo System
+
+## Overview
+
+The demo system provides a real-time AI coaching experience alongside the fighting game, featuring live tactical suggestions and game state analysis. In demo mode, the player controls the hero while receiving AI tactical advice, fighting against an AI-controlled Purple Knight with preserved learning state.
+
+## Demo vs Original Game
+
+### Demo Mode Features
+- **Human vs AI**: Player controls hero, AI controls Purple Knight
+- **Live AI Coaching**: Real-time tactical suggestions from fine-tuned Phi-3.5 model
+- **Preserved Learning**: Purple Knight's Q-learning state frozen (no updates)
+- **Input Support**: Keyboard and Xbox controller compatibility
+- **Integrated UI**: AI assistance panel inside game window
+- **Normal Speed**: 1x game speed for natural gameplay (vs 4x in original)
+- **Active Combat**: Purple Knight actively pursues and attacks player
+
+### Original Game Features
+- **AI vs AI**: Both characters controlled by Q-learning agents
+- **Active Learning**: Both agents continuously update Q-tables
+- **Debug Interface**: Q-value visualization and learning metrics
+- **Autonomous**: No human input required
+- **Fast Speed**: 4x accelerated for rapid AI training
+
+## Core Components
+
+### Demo Files
+- **`demo.html`** - AI-enhanced interface with suggestions panel
+- **`src/demo.js`** - Copy of main.js with AI integration
+- **Original files untouched** - main.js and index.html preserved
+
+### Separated Backend Architecture
+- **Data Collection Bridge**: `game_event_microservice/ai_bridge_fastapi.py` (Port 8765)
+  - Screenshots and game events → ChromaDB
+  - Training data collection only
+- **AI Model Server**: `ai_model_server.py` (Port 8766)
+  - Fine-tuned Phi-3.5 model serving
+  - Real-time tactical suggestions
+  - Fallback to rule-based system
+
+## Interface Features
+
+### Game Controls
+- **🎮 User Controls**: Player controls hero using keyboard or Xbox controller
+  - **Movement**: Arrow Keys/WASD (Walk 100, Run 175 speed)
+  - **Combat**: SPACE/Z (attack), SHIFT (block), CTRL (dodge), X (special), C (heavy)
+  - **Xbox Controller**: Left stick movement, face buttons for combat
+- **🤖 AI Opponent**: Purple Knight actively pursues and attacks with preserved Q-learning state
+  - **Active Combat**: Approaches player, attacks in range, uses tactical movements
+  - **Dynamic Actions**: Lunge attacks, evasive rolls, blocking strategies
+- **🔒 Learning Protection**: Purple Knight's Q-table updates disabled during demo
+- **⚡ Normal Speed**: 1x game speed for natural human vs AI combat
+
+### Right Panel Components (Inside Game Window)
+- **🤖 AI Fighting Coach** - Fine-tuned Phi-3.5 model status
+- **💡 Current Suggestion** - Latest tactical advice in highlighted box
+- **📊 Game Analysis** - Live health, stamina, distance, phase metrics
+- **📝 Suggestion History** - Scrollable history of recent AI suggestions
+- **🎮 Demo Controls** - Get suggestion and auto-mode toggle buttons
+
+### AI Suggestion Categories
+1. **Health-Based**: Critical health warnings, advantage notifications
+2. **Distance-Based**: Close combat, medium range, far engagement advice
+3. **Phase-Based**: Early game, mid game, critical phase strategies
+4. **Stamina-Based**: Energy management recommendations
+5. **Action-Based**: Movement and combat timing suggestions
+
+## Launch Commands
+
+### Demo Mode (2 Steps)
+```bash
+# Step 1: Start AI model server
+python ai_model_server.py
+
+# Step 2: Start demo frontend (in new terminal)
+npm run demo
+```
+Navigate to: `http://localhost:5173/demo.html`
+
+### Demo Mode + Data Collection (3 Steps)
+```bash
+# Step 1: Start AI model server
+python ai_model_server.py
+
+# Step 2: Start data collection bridge (in new terminal)
+python game_event_microservice/ai_bridge_fastapi.py
+
+# Step 3: Start demo frontend (in new terminal)
+npm run demo
+```
+
+### Original Game
+```bash
+npm run dev                     # Start original game
+# Navigate to: http://localhost:5173
+```
+
+## Complete 1-1 Mapping from main.js
+
+### Critical Systems Implemented
+- **✅ Armor Damage Calculation**: Complete `getArmorModifier()` with hit zones (helmet, breastplate, greaves)
+- **✅ Critical Hit System**: Full `getCritModifier()` with attacker/target calculations
+- **✅ Advanced Stamina System**: Complex regeneration with delays, exhaustion, and disable timers
+- **✅ Movement Disable System**: Stamina-based movement restrictions
+- **✅ Block Disable System**: Stamina-based blocking restrictions with recovery
+- **✅ Anti-Push Collision System**: Triple-layer knight separation with 85px minimum distance
+- **✅ Complete Attack Flow**: Wind-up (100ms) → blade glow → sword sensor → damage → recovery
+- **✅ Sword Sensor System**: 60px reach collision detection with proper angle calculations
+- **✅ Damage Immunity**: 500ms grace period preventing stun lock
+- **✅ Directional Blocking**: 45-degree arc protection with stamina costs
+- **✅ Knockback System**: Direction-based movement on successful hits
+- **✅ Death Handling**: Complete death sequence with game over screen
+
+### Missing Methods Added from main.js
+- **getAngleFromDirection()** - Convert 8-direction strings to radians
+- **getDirectionFromAngle()** - Convert angles to direction strings
+- **getArmorModifier()** - Complete armor calculation with hit zones
+- **getCritModifier()** - Critical hit damage calculation
+- **handleAttackImpact()** - Full damage processing with blocking/armor/crit
+- **applyDamage()** - Damage application with grace period and reactions
+- **logEvt()** - Event logging system for game actions
+- **handleDeath()** - Complete death sequence handling
+- **showGameOverScreen()** - Game over display and restart
+- **handleKnightCollisions()** - Knight-to-knight collision prevention
+- **triggerBladeGlow()** - Attack visual effects
+- **continueAttack()** - Attack animation continuation
+- **spawnSwordSensor()** - Sword collision detection
+- **createSwordArcParticles()** - Visual attack effects
+
+### Character Initialization Parity
+Both hero and Purple Knight now have complete property initialization matching main.js:
+- **Health/Stamina Systems**: Full regeneration with delays
+- **Combat States**: isDead, isAttacking, isTakingDamage, isBlocking
+- **Disable Systems**: movementDisabled, blockDisabled with timers
+- **AI Integration**: Purple Knight Q-learning preserved but updates disabled
+- **Physics Properties**: Proper mass, friction, collision categories
+
+### Game Mechanics Verification
+- **✅ Character Speed**: Hero and Purple Knight both move at 5 units
+- **✅ Combat Balance**: Equal damage, armor, and stamina systems
+- **✅ Physics Consistency**: Same collision and movement mechanics
+- **✅ Animation Sync**: Proper 8-direction animation system
+- **✅ State Management**: Complete attack/damage/recovery cycles
+- **✅ Error Prevention**: All missing function errors resolved
+
+## Development Guidelines
+
+### Demo.js Modifications
+- **Keep main.js untouched** - Always reference but never modify
+- **AI Integration Points**: 
+  - `requestAISuggestion()` - Manual suggestion requests
+  - `updateDemoInterface()` - Live UI updates inside game window
+  - `getCurrentGameStateString()` - State serialization for model input
+- **Demo-Specific Features**:
+  - **User Control**: Player controls hero via keyboard/Xbox controller
+  - **AI-Only Purple Knight**: Purple Knight remains AI-controlled but Q-learning disabled
+  - **Preserved Learning**: Purple Knight's Q-table remains unchanged during demo
+
+### AI Model Server (ai_model_server.py)
+- **Port**: 8766 (separate from data bridge)
+- **Input**: Game state string with health, stamina, distance, phase
+- **Model**: Fine-tuned Phi-3.5-mini-instruct for tactical advice
+- **Fallback**: Rule-based suggestions when model unavailable
+- **Device Detection**: Auto-detects CUDA/MPS/CPU
+
+### Data Collection Bridge (ai_bridge_fastapi.py)
+- **Port**: 8765 (data collection only)
+- **Purpose**: Screenshots, ChromaDB, training data
+- **No AI suggestions** - purely for data collection
+
+### Interface Updates
+- **Integrated Panel**: AI suggestions inside game window, replacing Q-Learning debug
+- **Real-time State**: Health, stamina, distance, phase tracking in compact format
+- **Suggestion Display**: Current advice in highlighted box with confidence
+- **Control Integration**: Simple get suggestion and auto-mode toggle buttons
+
+## Testing Protocol
+
+### Basic Demo Testing
+1. **Start AI Model Server**: `python ai_model_server.py`
+2. **Check Model Loading**: Verify fine-tuned model loads or fallback activates
+3. **Demo Launch**: `npm run demo` (new terminal)
+4. **Interface Check**: Verify AI panel appears inside game window (right side)
+5. **User Controls**: Test keyboard/Xbox controller input for hero movement and combat
+6. **AI Opponent**: Verify Purple Knight AI behavior without Q-learning updates
+7. **AI Suggestions**: Test both manual "Get Suggestion" and auto modes
+8. **Model Verification**: Check if using fine-tuned vs rule-based in panel
+9. **Original Preservation**: Verify `npm run dev` still works
+10. **Optional Data Collection**: Add `python game_event_microservice/ai_bridge_fastapi.py`
+
+### Complete System Verification (1-1 Mapping)
+11. **Movement Speed**: Verify both characters move at same speed (5 units)
+12. **Anti-Push System**: Test character collision prevention (85px separation)
+13. **Attack System**: Verify complete attack flow (wind-up → glow → sensor → damage)
+14. **Damage Calculation**: Test armor modifiers and critical hits
+15. **Stun Lock Prevention**: Verify 500ms grace period prevents rapid damage
+16. **Stamina System**: Test exhaustion, regeneration delays, and disable timers
+17. **Blocking System**: Verify directional blocking and stamina costs
+18. **Death Handling**: Test complete death sequence and game over screen
+19. **Error Prevention**: Ensure no "function not found" errors in console
+20. **State Management**: Verify proper character state transitions
+
+## Integration Notes
+
+### Fine-tuned Model Integration
+- **Automatic Detection**: Looks for `model/fine_tuned/` directory
+- **Device Auto-selection**: CUDA > MPS > CPU based on availability
+- **Prompt Format**: Uses Phi-3.5 chat template with system message
+- **Fallback System**: Automatic rule-based fallback if model fails
+- **Confidence Scoring**: "High" for model, "Medium/Low" for rules
+
+### UI Customization
+- Modern gradient design with tech aesthetic
+- Responsive layout for different screen sizes
+- Smooth animations and transitions
+- Accessibility considerations for color contrast
+
+## Troubleshooting
+
+### Fixed Issues (v1.3 - Complete 1-1 Mapping)
+- **Network Connection**: ✅ Fixed port routing - unified all endpoints to port 8766
+- **DOM Elements**: ✅ Added missing `suggestion-history` element in demo.html
+- **UI Methods**: ✅ All health/stamina bar update methods now working properly
+- **Gamepad Support**: ✅ Fixed gamepad initialization with proper error handling
+- **Movement Issues**: ✅ Fixed hero movement by reducing mass and friction
+- **AI Combat**: ✅ Fixed Purple Knight static body - now actively moves and attacks
+- **Game Speed**: ✅ Normalized from 4x to 1x speed for human gameplay
+- **Hero Movement Speed**: ✅ Fixed hero speed to match Purple Knight (5 units)
+- **Anti-Push System**: ✅ Complete triple-layer collision prevention from main.js
+- **Attack System**: ✅ Complete attack flow with wind-up, blade glow, sword sensors
+- **Damage System**: ✅ Full damage calculation with armor/crit modifiers
+- **Stun Lock Prevention**: ✅ 500ms grace period and proper `isTakingDamage` state
+- **Missing Functions**: ✅ Added all critical methods from main.js
+- **Stamina System**: ✅ Complete stamina regeneration with delays and exhaustion
+- **Complete Parity**: ✅ Full 1-1 mapping of all game mechanics from main.js
+
+### Common Issues
+- **AI Model Offline**: Suggestions fall back to rule-based system automatically
+- **Port 8766 in Use**: AI model server port conflict
+- **Model Loading Failed**: Check `model/fine_tuned/` directory exists
+- **CORS Errors**: Both servers (8765, 8766) have CORS enabled
+- **Interface Not Loading**: Verify demo.html connects to port 8766
+
+### Network Architecture (Unified)
+- **Port 8766**: AI model server (`ai_model_server.py`) - **ALL DEMO ENDPOINTS**
+  - `/ai_suggestion` - Tactical advice generation
+  - `/game_event` - Game event logging
+  - `/game_state_snapshot` - Screenshot capture  
+  - `/model_info` - Model status
+- **Port 8765**: Data collection bridge (`ai_bridge_fastapi.py`) - **OPTIONAL**
+  - Only needed for ChromaDB data collection
+  - Not required for demo functionality
+
+### Debug Tools
+- **Browser Console**: JavaScript errors and network requests
+- **Data Bridge Terminal** (8765): Data collection logs
+- **AI Model Terminal** (8766): Model inference logs and fallback status
+- **Network Tab**: Check requests to both 8765 (data) and 8766 (AI)
+- **Game Debug Keys**: (F2, X) still functional in demo
+- **Model Info Endpoint**: `GET http://localhost:8766/model_info`

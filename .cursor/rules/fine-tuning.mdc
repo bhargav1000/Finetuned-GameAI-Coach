@@ -1,0 +1,357 @@
+---
+description: Model Fine-tuning System for Fighting Game AI Assistant
+globs: ["finetune_*.py", "training_visualizer.py", "test_visualization.py", "phi_game_assistant_model/**", "**/*fine*tune*", "training_data/**", "train_visualizations/**"]
+alwaysApply: false
+---
+
+# Model Fine-tuning System
+
+## Overview
+Complete system for fine-tuning Microsoft Phi-3.5-mini-instruct model using collected fighting game data to create a specialized AI assistant that provides real-time tactical advice.
+
+## Recommended Model: Microsoft Phi-3.5-mini-instruct
+### Why Phi-3.5?
+- **Efficiency**: 3.8B parameters, runs on consumer GPUs
+- **Instruction Following**: Optimized for chat and instruction tasks
+- **Local Deployment**: Can run offline after fine-tuning
+- **Memory Efficient**: Works with 8GB+ VRAM using quantization
+- **Fast Inference**: Suitable for real-time game integration
+
+## Fine-tuning Setup
+
+### Required Dependencies
+```bash
+# Option 1: Unsloth (Recommended - 2x faster, 50% less memory)
+pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+
+# Option 2: Standard Stack (Fallback)
+pip install transformers peft datasets accelerate bitsandbytes trl
+```
+
+### Hardware Requirements
+- **GPU**: CUDA-capable GPU with 8GB+ VRAM
+- **RAM**: 16GB+ system memory
+- **Storage**: 10GB+ free space for model and checkpoints
+- **Training Time**: 30-60 minutes for 100 steps
+
+## Training Configuration
+
+### Optimal Hyperparameters
+```python
+training_config = {
+    "per_device_train_batch_size": 2,
+    "gradient_accumulation_steps": 4,
+    "warmup_steps": 5,
+    "max_steps": 100,           # Adjust based on data size (11,741 examples)
+    "learning_rate": 2e-4,
+    "fp16": True,               # Memory optimization
+    "logging_steps": 1,
+    "optim": "adamw_8bit",      # Memory efficient optimizer
+    "weight_decay": 0.01,
+    "lr_scheduler_type": "linear",
+    "seed": 3407,
+}
+```
+
+### LoRA Configuration (Low-Rank Adaptation)
+```python
+lora_config = {
+    "r": 16,                    # Rank - balance between performance and efficiency
+    "target_modules": [         # Phi-3.5 specific modules
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj"
+    ],
+    "lora_alpha": 16,
+    "lora_dropout": 0,
+    "bias": "none",
+    "use_gradient_checkpointing": "unsloth",
+    "random_state": 3407,
+}
+```
+
+## Data Format
+
+### Training Data Structure
+- **Source**: `training_data/summary/training_dataset.jsonl`
+- **Format**: JSONL with instruction-following examples
+- **Total Examples**: 11,741 tactical scenarios
+- **Coverage**: Early/mid/late game phases, all combat situations
+
+### Phi-3.5 Chat Template
+```python
+def format_training_prompt(example):
+    return f"""<|user|>
+{example['instruction']}
+
+Game State: {example['input']}<|end|>
+<|assistant|>
+{example['output']}<|end|>"""
+```
+
+### Example Training Instance
+```json
+{
+  "instruction": "You are an expert fighting game coach. Analyze this game state and provide tactical advice for the hero player.",
+  "input": "Hero: 73% HP, 69% stamina, attacking. Knight: 45% HP, 85% stamina, blocking. Distance: close, Phase: mid_game",
+  "output": "Perfect timing! The knight is blocking but low on health. Continue pressure with combo attacks - they can't block forever. Watch their stamina and prepare to dodge when they counter-attack."
+}
+```
+
+## Training Visualization System
+
+### Real-time Progress Monitoring
+The fine-tuning process includes comprehensive visualization and metrics tracking:
+
+```python
+# Training visualizations are automatically generated
+├── train_visualizations/
+│   ├── training_progress_YYYYMMDD_HHMMSS.png    # Loss curves & learning rate
+│   ├── gradient_norms_YYYYMMDD_HHMMSS.png       # Gradient flow monitoring
+│   ├── training_summary_YYYYMMDD_HHMMSS.png     # 4-panel comprehensive view
+│   ├── training_metrics_YYYYMMDD_HHMMSS.json    # Raw metrics for analysis
+│   └── README.md                                # Documentation
+```
+
+### Visualization Features
+- **Real-time Loss Tracking**: Training and validation loss curves
+- **Learning Rate Schedule**: Visual confirmation of LR decay
+- **Gradient Monitoring**: Detect vanishing/exploding gradients
+- **Training Timeline**: Loss progression vs wall-clock time
+- **JSON Export**: Raw metrics for custom analysis
+- **Session Management**: Timestamp-based file organization
+
+### Integration
+Visualization is automatically integrated into both training pipelines:
+- **Unsloth Trainer**: Custom callbacks for real-time updates
+- **Transformers Trainer**: Built-in logging with visual output
+- **Update Frequency**: Charts refresh every 5 training steps
+- **Final Summary**: Comprehensive metrics display on completion
+
+## Fine-tuning Process
+
+### 1. Pre-Training Validation
+```bash
+# Verify training data exists
+ls training_data/summary/training_dataset.jsonl
+
+# Check data quality
+python -c "
+import json
+with open('training_data/summary/training_dataset.jsonl') as f:
+    count = sum(1 for line in f)
+print(f'Training examples: {count}')
+"
+```
+
+### 2. Model Loading Strategy
+- **Primary**: Unsloth with 4-bit quantization for memory efficiency
+- **Fallback**: Transformers + PEFT for compatibility
+- **Auto-detection**: Script automatically selects best available method
+
+### 3. Training Execution
+```bash
+# Install visualization dependencies
+pip install matplotlib seaborn
+
+# Run fine-tuning with integrated visualization
+python finetune_phi_model.py
+
+# Optional: Test visualization system
+python test_visualization.py
+```
+
+### 4. Training Monitoring
+During training, monitor progress through:
+- **Console Output**: Real-time loss and metrics
+- **Chart Updates**: Visual progress every 5 steps  
+- **Session Tracking**: Timestamped visualization files
+- **Memory Usage**: VRAM and system memory monitoring
+- **Training Speed**: Samples per second throughput
+
+### 5. Output Structure
+```
+phi_game_assistant_model/
+├── adapter_config.json          # LoRA adapter configuration
+├── adapter_model.safetensors    # Fine-tuned weights
+├── tokenizer.json              # Tokenizer configuration
+├── tokenizer_config.json       # Tokenizer settings
+├── training_metadata.json      # Training parameters and timestamps
+└── gguf/                       # Optional: GGUF format for llama.cpp
+    └── model.gguf
+```
+
+## Model Performance Expectations
+
+### Training Metrics
+- **Loss Reduction**: Expect 40-60% loss reduction over 100 steps
+- **Convergence**: Model should converge within 50-100 steps
+- **Memory Usage**: 6-8GB VRAM with optimizations (visualized in real-time)
+- **Training Time**: 30-60 minutes depending on hardware
+- **Gradient Health**: Monitor for stable gradient norms (10^-3 to 10^1 range)
+- **Learning Rate**: Verify proper decay schedule visualization
+
+### Quality Indicators
+- **Tactical Relevance**: Responses should address specific game state
+- **Strategic Depth**: Advice should consider health, stamina, distance
+- **Situational Awareness**: Recommendations adapt to game phase
+- **Action Specificity**: Clear, actionable instructions
+
+## Integration Approaches
+
+### Real-time Game Integration
+```javascript
+// In main.js - Add AI assistant integration
+async function getAIAdvice(gameState) {
+    const prompt = `Hero: ${gameState.hero.health}% HP, ${gameState.hero.stamina}% stamina, ${gameState.hero.action}. Knight: ${gameState.knight.health}% HP, ${gameState.knight.stamina}% stamina, ${gameState.knight.action}. Distance: ${gameState.distance}`;
+    
+    // Send to local inference server
+    const response = await fetch('http://localhost:8000/advice', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({gameState: prompt})
+    });
+    
+    return response.json();
+}
+```
+
+### Local Inference Server
+```python
+# Simple FastAPI server for model inference
+from fastapi import FastAPI
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import PeftModel
+
+app = FastAPI()
+model = AutoModelForCausalLM.from_pretrained("microsoft/Phi-3.5-mini-instruct")
+model = PeftModel.from_pretrained(model, "phi_game_assistant_model")
+tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3.5-mini-instruct")
+
+@app.post("/advice")
+async def get_advice(game_state: str):
+    # Generate tactical advice
+    inputs = tokenizer(f"<|user|>Analyze: {game_state}<|end|><|assistant|>", return_tensors="pt")
+    outputs = model.generate(**inputs, max_new_tokens=100, temperature=0.7)
+    advice = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return {"advice": advice.split("<|assistant|>")[-1].strip()}
+```
+
+## Evaluation and Testing
+
+### Automated Testing
+```python
+test_cases = [
+    {
+        "scenario": "Hero low health, knight full health",
+        "expected_advice": "defensive positioning, stamina management"
+    },
+    {
+        "scenario": "Even match, close distance",
+        "expected_advice": "aggressive pressure, combo execution"
+    }
+]
+```
+
+### Training Analysis
+```python
+# Analyze training metrics from visualization data
+import json
+import matplotlib.pyplot as plt
+
+# Load training session data
+with open('train_visualizations/training_metrics_YYYYMMDD_HHMMSS.json') as f:
+    metrics = json.load(f)
+
+# Custom analysis
+steps = metrics['metrics']['steps']
+loss = metrics['metrics']['train_loss']
+plt.plot(steps, loss)
+plt.title('Training Loss Progression')
+plt.xlabel('Steps')
+plt.ylabel('Loss')
+plt.show()
+```
+
+### Manual Validation
+- Test across all game phases (early, mid, late, critical)
+- Verify advice quality for different health/stamina combinations
+- Ensure recommendations are actionable and specific
+- Check for consistent tactical philosophy
+
+## Advanced Optimization
+
+### Extended Training
+- **More Data**: Collect additional gameplay sessions
+- **Curriculum Learning**: Train on progressively difficult scenarios
+- **Multi-task**: Add win prediction as auxiliary task
+- **Reinforcement Learning**: Use game outcomes to refine advice
+
+### Model Variants
+- **Quantized Models**: 4-bit/8-bit for mobile deployment
+- **GGUF Format**: For llama.cpp integration
+- **ONNX Export**: For cross-platform inference
+- **TensorRT**: For maximum inference speed
+
+### Deployment Options
+1. **Local Desktop**: Direct integration into game client
+2. **Local Server**: FastAPI/Flask inference endpoint  
+3. **Cloud Deployment**: Azure/AWS for scalability
+4. **Mobile**: Quantized model for mobile gaming
+5. **Edge**: Raspberry Pi for tournament setups
+
+## Monitoring and Maintenance
+
+### Performance Tracking
+- **Response Time**: <100ms for real-time advice
+- **Accuracy**: User feedback on advice quality
+- **Usage Patterns**: Most requested scenarios
+- **Model Drift**: Performance degradation over time
+- **Training History**: Archived visualization data for comparison
+- **Resource Usage**: GPU memory and training efficiency trends
+
+### Continuous Improvement
+- **Data Collection**: Keep gathering new gameplay data
+- **User Feedback**: Implement rating system for advice
+- **A/B Testing**: Compare different model versions
+- **Regular Retraining**: Monthly fine-tuning with fresh data
+
+## Troubleshooting
+
+### Common Issues
+- **CUDA Out of Memory**: Reduce batch size, enable gradient checkpointing
+- **Slow Training**: Use Unsloth, enable mixed precision training
+- **Poor Quality**: Increase training steps, check data quality
+- **Overfitting**: Add regularization, reduce learning rate
+- **Visualization Errors**: Install matplotlib/seaborn, check system compatibility
+- **Gradient Issues**: Monitor gradient norm charts for exploding/vanishing gradients
+
+### Model Quality Checks
+```python
+# Test model coherence
+def validate_model_output(model_response):
+    checks = [
+        "mentions health/stamina" in model_response.lower(),
+        "provides specific action" in model_response.lower(),
+        len(model_response.split()) > 10,  # Sufficient detail
+        "attack" in model_response or "defend" in model_response  # Tactical advice
+    ]
+    return sum(checks) >= 3  # Pass if 3/4 checks pass
+```
+
+## Success Metrics
+
+### Technical Metrics
+- **Training Loss**: < 1.0 after convergence (visualized in real-time)
+- **Inference Speed**: < 100ms per request
+- **Memory Usage**: < 8GB VRAM for inference
+- **Model Size**: < 3GB for LoRA adapter
+- **Training Efficiency**: Stable gradient norms, smooth loss curves
+- **Visualization Coverage**: Complete training session documentation
+
+### User Experience Metrics
+- **Advice Relevance**: 90%+ situations addressed appropriately
+- **Strategic Value**: Measurable improvement in player performance
+- **Response Time**: Real-time integration without lag
+- **User Satisfaction**: Positive feedback on tactical insights
+
+This fine-tuning system transforms your collected gameplay data into a specialized AI assistant capable of providing expert-level fighting game strategy advice in real-time.

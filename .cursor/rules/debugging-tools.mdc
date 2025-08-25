@@ -1,0 +1,48 @@
+---
+description: Debug controls and visualization tools
+---
+
+# Debugging and Development Tools
+
+## Debug Controls
+
+### Physics Visualization
+- **F2 Key**: Toggle Matter.js physics body visibility for walls and static objects
+- **X Key**: Toggle custom debug shapes (boundaries, collision circles)
+
+### Visual Debug Elements
+- **Red Lines**: Arena boundaries and walls
+- **Blue/Green Circles**: Character collision areas and sensors
+- **No Yellow Boxes**: Attack sensor visualization removed to prevent combat distraction
+
+## Debug Information
+
+### Performance Monitoring
+- Frame rate display in development mode
+- Physics step timing
+- Animation frame tracking
+
+### AI State Visualization
+- Q-value displays for both agents
+- Action selection reasoning
+- State bin calculations (distance, health, actions)
+
+### Combat Analysis
+- Hit detection sensor creation/destruction
+- Damage calculation breakdown
+- Blocking angle calculations
+- Stamina consumption tracking
+
+## Development Guidelines
+
+### Debug Mode Safety
+- All debug visualizations should be toggleable
+- Performance impact minimized in production
+- Debug overlays don't interfere with gameplay
+- Clear visual distinction between debug and game elements
+
+### Testing Features
+- Character position reset capabilities
+- AI behavior forcing for testing
+- Manual state manipulation for edge case testing
+- Replay system for combat analysis

@@ -1,0 +1,20 @@
+#macOS specific
+.DS_Store
+
+# dev folders
+.claude/
+.venv/
+node_modules/
+__pycache__/
+training_data/*
+
+# screenshots
+screenshots/*
+
+# model weights and fine-tuned models
+model/*
+!model/.gitkeep
+
+# future work and experimental features
+future_work/
+

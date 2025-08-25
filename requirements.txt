@@ -1,0 +1,69 @@
+# ================================
+# Vibe-Code-Adaptive-Game-AI
+# Complete Python Requirements
+# ================================
+
+# ================================
+# CORE GAME & BACKEND DEPENDENCIES
+# ================================
+
+# FastAPI Backend & API
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+websockets==15.0.1
+
+# Data Collection & Vector DB
+chromadb==1.0.15
+sentence_transformers==5.0.0
+
+# ================================
+# MACHINE LEARNING & AI
+# ================================
+
+# Core ML Libraries
+torch>=2.1.0
+numpy>=1.24.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+
+# Fine-tuning Stack (Phi-3.5 Compatible)
+transformers==4.44.2
+peft==0.12.0
+datasets>=2.15.0
+accelerate>=0.25.0
+bitsandbytes>=0.41.0
+trl>=0.7.0
+
+# ================================
+# UTILITIES & VISUALIZATION
+# ================================
+
+# Progress Bars & UI
+tqdm>=4.65.0
+
+# Version Management
+packaging>=21.0
+
+# Data Visualization
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# ================================
+# OPTIONAL DEPENDENCIES
+# ================================
+
+# Enhanced Performance (CUDA required)
+# flash-attn>=2.0.0
+
+# ================================
+# INSTALLATION NOTES
+# ================================
+
+# For optimal fine-tuning performance, also consider:
+# pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+
+# For Apple Silicon Macs:
+# - MPS acceleration is automatically detected
+# - No additional CUDA dependencies needed
+# - All packages above are Mac compatible

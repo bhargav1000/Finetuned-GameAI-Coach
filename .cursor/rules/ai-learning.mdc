@@ -1,0 +1,57 @@
+---
+globs: src/RL.js,heroknight.json,pknight.json
+---
+
+# AI Learning System
+
+## Q-Learning Implementation
+
+### Agent Configuration
+- **Learning Rate**: Configurable via JSON files
+- **Epsilon Decay**: Exploration vs exploitation balance
+- **Discount Factor**: Future reward consideration
+- **Q-Table Persistence**: Saved to localStorage between sessions
+
+### State Calculation
+- **Distance Bins**: close (<80px), medium (<200px), far (>=200px)
+- **Health Levels**: Character health percentage bins
+- **Opponent Actions**: attacking, blocking, idle detection
+- **Aggression Level**: Purple knight aggression state
+
+## Reward Engineering
+
+### Purple Knight Rewards
+- **Defensive Actions**:
+  - +20 for blocking when hero attacks
+  - +18 for rolling away from attacks
+  - +15 for reactive defense
+- **Aggressive Actions**:
+  - +15 for attacking when close
+  - +20 for approaching when far
+  - +12 for lunging at medium range
+- **Penalties**:
+  - -50 for idle attempts
+  - -30 to -60 for being far without approaching
+
+### Hero Knight Rewards
+- **Movement**: +12 to +27 for distance-closing actions
+- **Combat**: +18 for attacking at close range
+- **Positioning**: Penalties for being far without action
+
+## Learning Parameters
+
+### Knight Agent (Purple)
+- Idle Q-value initialized at -100
+- Heavy penalties for passive behavior
+- Distance-based action forcing
+- Reactive defense prioritization
+- **Time-Based Aggression Scaling**: Continuously increases aggression over game time
+  - Max aggression scales from 100 to 300 over 60 seconds (3x multiplier)
+  - Aggression gain rate scales with time
+  - Additional +1 aggression boost every 2 seconds
+  - Creates escalating difficulty and pressure
+
+### Hero Agent
+- 8-directional movement optimization
+- Attack timing rewards
+- Distance management incentives
