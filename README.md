@@ -1,4 +1,4 @@
-# Custom Adaptive Game AI
+# Finetuned GameAI Coach
 
 This project is an **AI assistant designed for the [Vibe Coded AI game](https://github.com/bhargav1000/Vibe-Coded-Game-with-Cursor-PhaserJS)** built with Phaser 3. The AI model was fine-tuned to provide intelligent tactical suggestions during gameplay, featuring Q-learning agents for training data generation and performance improvement.
 
