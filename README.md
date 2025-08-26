@@ -4,7 +4,7 @@ This project is an **AI assistant designed for the [Vibe Coded AI game](https://
 
 ## 🎮 Demo Video
 
-![Demo](https://raw.githubusercontent.com/bhargav1000/Finetuned-GameAI-Coach/main/assets/Final-Demo.gif)
+![Demo](assets/Final-Demo-optimized.gif)
 
 *Check out the AI-enhanced fighting game in action with the player-controlled hero vs AI-controlled Purple Knight, the interface on the right features suggestions from my fine-tuned Phi-3.5 model!*
 
